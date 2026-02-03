@@ -196,72 +196,173 @@
     }
 
     function runPredictor(){
-      if (!latestStandingsPayload){
-        statusEl.textContent = "Please load live standings first.";
+  if (!latestStandingsPayload){
+    statusEl.textContent = "Please load live standings first.";
+    return;
+  }
+
+  var selected = teamSel.value;
+  statusEl.textContent = "Running predictor (loading matches)…";
+  outEl.textContent = "Working…";
+
+  fetch(MATCHES_ENDPOINT + "?_=" + Date.now())
+    .then(function(r){
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
+    .then(function(matchPayload){
+      var matches = (matchPayload && matchPayload.matches) ? matchPayload.matches : [];
+
+      // Build form map (last 5 finished)
+      // (still assumes matches are chronological; we can improve later)
+      var finishedOnly = [];
+      for (var i=0; i<matches.length; i++){
+        if (matches[i] && matches[i].status === "FINISHED") finishedOnly.push(matches[i]);
+      }
+      var formMap = buildLast5FormMap(finishedOnly);
+
+      // Build home/away PPG maps from finished matches
+      var homeAgg = {}; // team -> {pts, games}
+      var awayAgg = {}; // team -> {pts, games}
+
+      function addAgg(agg, team, pts){
+        if (!agg[team]) agg[team] = { pts: 0, games: 0 };
+        agg[team].pts += pts;
+        agg[team].games += 1;
+      }
+
+      for (var f=0; f<finishedOnly.length; f++){
+        var m = finishedOnly[f];
+        var home = (m.homeTeam && m.homeTeam.name) ? m.homeTeam.name : null;
+        var away = (m.awayTeam && m.awayTeam.name) ? m.awayTeam.name : null;
+        if (!home || !away) continue;
+
+        var hs = (m.score && m.score.fullTime) ? m.score.fullTime.home : null;
+        var as = (m.score && m.score.fullTime) ? m.score.fullTime.away : null;
+        if (typeof hs !== "number" || typeof as !== "number") continue;
+
+        var homePts = 0, awayPts = 0;
+        if (hs > as) { homePts = 3; awayPts = 0; }
+        else if (hs < as) { homePts = 0; awayPts = 3; }
+        else { homePts = 1; awayPts = 1; }
+
+        addAgg(homeAgg, home, homePts);
+        addAgg(awayAgg, away, awayPts);
+      }
+
+      function ppgFromAgg(agg, team){
+        var a = agg[team];
+        if (!a || !a.games) return null;
+        return a.pts / a.games;
+      }
+
+      // Remaining fixtures: anything not FINISHED (SCHEDULED, TIMED, etc.)
+      // We'll count how many home + away remaining per team.
+      var remainHome = {};
+      var remainAway = {};
+      function inc(map, team){
+        if (!map[team]) map[team] = 0;
+        map[team] += 1;
+      }
+
+      for (var r=0; r<matches.length; r++){
+        var mm = matches[r];
+        if (!mm || mm.status === "FINISHED") continue;
+        var h = (mm.homeTeam && mm.homeTeam.name) ? mm.homeTeam.name : null;
+        var a = (mm.awayTeam && mm.awayTeam.name) ? mm.awayTeam.name : null;
+        if (!h || !a) continue;
+        inc(remainHome, h);
+        inc(remainAway, a);
+      }
+
+      // Standings rows
+      var total = findTotal(latestStandingsPayload);
+      var rows = (total && total.table) ? total.table : [];
+      if (!rows.length){
+        statusEl.textContent = "No standings data available.";
         return;
       }
 
-      var selected = teamSel.value;
-      statusEl.textContent = "Running predictor (loading matches)…";
-      outEl.textContent = "Working…";
+      // Project points:
+      // current points +
+      // remainingHome * homePPG +
+      // remainingAway * awayPPG
+      // plus a conservative form nudge
+      var projected = [];
+      for (var t=0; t<rows.length; t++){
+        var row = rows[t];
+        var team = (row.team && (row.team.name || row.team.shortName || row.team.tla)) || "";
+        var played = row.playedGames || 0;
+        var points = row.points || 0;
 
-      fetch(MATCHES_ENDPOINT + "?status=FINISHED&_=" + Date.now())
-        .then(function(r){
-          if (!r.ok) throw new Error("HTTP " + r.status);
-          return r.json();
-        })
-        .then(function(matchPayload){
-          var matches = (matchPayload && matchPayload.matches) ? matchPayload.matches : [];
-          var formMap = buildLast5FormMap(matches);
+        var seasonPPG = played ? (points / played) : 0;
 
-          var total = findTotal(latestStandingsPayload);
-          var rows = (total && total.table) ? total.table : [];
-          if (!rows.length){
-            statusEl.textContent = "No standings data available.";
-            return;
-          }
+        var hPPG = ppgFromAgg(homeAgg, team);
+        var aPPG = ppgFromAgg(awayAgg, team);
 
-          var projected = [];
-          for (var i=0; i<rows.length; i++){
-            var rrow = rows[i];
-            var name = (rrow.team && (rrow.team.name || rrow.team.shortName || rrow.team.tla)) || "";
-            var played = rrow.playedGames || 0;
-            var points = rrow.points || 0;
+        // If we don't have enough data yet, fall back to seasonPPG
+        if (hPPG === null) hPPG = seasonPPG;
+        if (aPPG === null) aPPG = seasonPPG;
 
-            var seasonPPG = played ? (points / played) : 0;
-            var baseProj = seasonPPG * 38;
+        var rh = remainHome[team] || 0;
+        var ra = remainAway[team] || 0;
 
-            var f = formMap[name];
-            var last5PPG = (f && f.games) ? f.ppg : seasonPPG;
+        // Base projection from home/away split
+        var baseProj = points + (rh * hPPG) + (ra * aPPG);
 
-            // Conservative adjustment based on last-5 vs season
-            var delta = last5PPG - seasonPPG;
-            var remainingGames = Math.max(0, 38 - played);
-            var formBoost = delta * remainingGames * 0.35;
+        // Form adjustment (last 5 vs season)
+        var fobj = formMap[team];
+        var last5PPG = (fobj && fobj.games) ? fobj.ppg : seasonPPG;
+        var delta = last5PPG - seasonPPG;
+        var remainingGames = Math.max(0, 38 - played);
+        var formBoost = delta * remainingGames * 0.25; // slightly lower because we now model fixtures split
 
-            projected.push({
-              team: name,
-              projPts: baseProj + formBoost,
-              seasonPPG: seasonPPG,
-              last5PPG: last5PPG
-            });
-          }
+        var projPts = baseProj + formBoost;
 
-          projected.sort(function(a,b){ return b.projPts - a.projPts; });
-
-          var pos = null;
-          for (var j=0; j<projected.length; j++){
-            if (projected[j].team === selected){ pos = j+1; break; }
-          }
-
-          statusEl.textContent = "Predicted finish for " + selected + ": " + (pos || "?") + "th";
-          outEl.textContent = formatProjected(projected);
-        })
-        .catch(function(e){
-          statusEl.textContent = "Predictor failed: " + e.message;
-          outEl.textContent = e.message;
+        projected.push({
+          team: team,
+          projPts: projPts,
+          seasonPPG: seasonPPG,
+          last5PPG: last5PPG,
+          homePPG: hPPG,
+          awayPPG: aPPG,
+          remHome: rh,
+          remAway: ra
         });
-    }
+      }
+
+      projected.sort(function(a,b){ return b.projPts - a.projPts; });
+
+      var pos = null;
+      for (var j=0; j<projected.length; j++){
+        if (projected[j].team === selected){ pos = j+1; break; }
+      }
+
+      statusEl.textContent = "Predicted finish for " + selected + ": " + (pos || "?") + "th";
+
+      // Output
+      var lines = [];
+      lines.push("#  Team                         ProjPts  RH  RA  HPPG  APPG  L5PPG");
+      lines.push("---------------------------------------------------------------------");
+      for (var k=0; k<projected.length; k++){
+        var p = projected[k];
+        var line = padLeft(k+1, 2) + "  " + padRight(p.team, 28) +
+          "  " + padLeft(p.projPts.toFixed(1), 7) +
+          "  " + padLeft(p.remHome, 2) +
+          "  " + padLeft(p.remAway, 2) +
+          "  " + padLeft(p.homePPG.toFixed(2), 5) +
+          "  " + padLeft(p.awayPPG.toFixed(2), 5) +
+          "  " + padLeft(p.last5PPG.toFixed(2), 5);
+        lines.push(line);
+      }
+      outEl.textContent = lines.join("\n");
+    })
+    .catch(function(e){
+      statusEl.textContent = "Predictor failed: " + e.message;
+      outEl.textContent = e.message;
+    });
+}
+
 
     btn.addEventListener("click", loadStandings);
     predictBtn.addEventListener("click", runPredictor);
