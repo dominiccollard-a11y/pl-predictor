@@ -26,36 +26,33 @@
   <pre id="out">No data yet.</pre>
 
   <script>
-    const ENDPOINT = "/.netlify/functions/pl-standings";
+    var ENDPOINT = "/.netlify/functions/pl-standings";
 
-    const teamSel = document.getElementById("team");
-    const btn = document.getElementById("btn");
-    const statusEl = document.getElementById("status");
-    const out = document.getElementById("out");
+    var teamSel = document.getElementById("team");
+    var btn = document.getElementById("btn");
+    var statusEl = document.getElementById("status");
+    var out = document.getElementById("out");
 
     function findTotal(payload){
-      const standings = (payload && payload.standings) ? payload.standings : [];
-      return standings.find(s => s && s.type === "TOTAL");
+      var standings = (payload && payload.standings) ? payload.standings : [];
+      for (var i = 0; i < standings.length; i++){
+        var s = standings[i];
+        if (s && s.type === "TOTAL") return s;
+      }
+      return null;
     }
 
     function renderTeams(rows){
-      const teams = rows.map(r => (r.team && (r.team.name || r.team.shortName || r.team.tla)) || "").filter(Boolean);
-      teams.sort((a,b)=>a.localeCompare(b));
+      var teams = [];
+      for (var i = 0; i < rows.length; i++){
+        var r = rows[i];
+        var name = (r.team && (r.team.name || r.team.shortName || r.team.tla)) || "";
+        if (name) teams.push(name);
+      }
+      teams.sort(function(a,b){ return a.localeCompare(b); });
 
-      teamSel.innerHTML = teams.map(t => `<option>${t}</option>`).join("");
-      teamSel.disabled = false;
-    }
+      var html = "";
+      for (var j = 0; j < teams.length; j++){
+        html += "<option>" + teams[j] + "</option>";
+      }
 
-    async function load(){
-      statusEl.textContent = "Loading live standings…";
-      out.textContent = "";
-
-      try{
-        const r = await fetch(ENDPOINT + "?_=" + Date.now());
-        if(!r.ok) throw new Error("HTTP " + r.status);
-        const payload = await r.json();
-
-        const total = findTotal(payload);
-        const rows = (total && total.table) ? total.table : [];
-
-        statusEl.textContent = `Loaded ${rows.length} teams. Select a team.`;
