@@ -19,8 +19,8 @@
     <select id="team" disabled>
       <option>Load standings first…</option>
     </select>
-    <button id="btn">Get live standings</button>
     <button id="predict" disabled>Run predictor</button>
+
   </div>
 
   <p id="status">Waiting…</p>
@@ -46,6 +46,8 @@
     var outEl     = document.getElementById("out");
 
     var latestStandingsPayload = null;
+    var lastUpdatedText = "";
+
     var teamIdToName = {};
 var teamIdToShort = {};
 var SIGMOID_SCALE = 1.25;
@@ -207,11 +209,13 @@ var SIGMOID_SCALE = 1.25;
         })
         .then(function(payload){
           latestStandingsPayload = payload;
+lastUpdatedText = new Date().toLocaleString();
 
           var total = findTotal(payload);
           var rows = (total && total.table) ? total.table : [];
 
-          statusEl.textContent = "Loaded " + rows.length + " teams.";
+          statusEl.textContent = "Current league table • Last updated: " + lastUpdatedText;
+
           outEl.textContent = formatStandings(rows);
 
           if (rows.length) renderTeams(rows);
@@ -860,8 +864,11 @@ statusEl.textContent += " | HOME_ADV=" + HOME_ADV.toFixed(3);
 
 
 
-    btn.addEventListener("click", loadStandings);
     predictBtn.addEventListener("click", runPredictor);
+
+// Default view: load live standings immediately
+loadStandings();
+
   </script>
 </body>
 </html>
