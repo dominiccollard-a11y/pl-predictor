@@ -45,6 +45,7 @@
 
     var statusEl = document.getElementById("status");
     var out = document.getElementById("out");
+var latestPayload = null;
 
     statusEl.textContent = "JS loaded. Click “Get live standings”.";
     function formatStandings(rows){
@@ -154,6 +155,7 @@ function formatProjected(projected){
         .then(function(payload){
           var total = findTotal(payload);
           var rows = (total && total.table) ? total.table : [];
+latestPayload = payload;
 
           statusEl.textContent = "Loaded " + rows.length + " teams.";
           out.textContent = formatStandings(rows);
@@ -176,13 +178,12 @@ function formatProjected(projected){
   var selected = teamSel.value;
 
   // Parse the currently displayed JSON in the black box (we already have it there).
-  var payload = null;
-  try {
-    payload = JSON.parse(out.textContent);
-  } catch (e) {
-    statusEl.textContent = "Please load live standings first.";
-    return;
-  }
+  if (!latestPayload) {
+  statusEl.textContent = "Please load live standings first.";
+  return;
+}
+var payload = latestPayload;
+
 
   var total = findTotal(payload);
   var rows = (total && total.table) ? total.table : [];
