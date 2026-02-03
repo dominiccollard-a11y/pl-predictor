@@ -262,16 +262,25 @@ function pct(x){
   return (v * 100).toFixed(1) + "%";
 }
 
-function showSummary(){
-  summaryEl.style.display = "block";
-  outEl.style.display = "none";
-}
 
 function showSummary(){
   summaryEl.style.display = "block";
   outEl.style.display = "none";
   if (tableFooterEl) tableFooterEl.style.display = "none";
 }
+
+function showTable(text){
+  outEl.textContent = text;
+  outEl.style.display = "block";
+  if (tableFooterEl) tableFooterEl.style.display = "none";
+}
+
+function showMathTable(text){
+  outEl.textContent = text;
+  outEl.style.display = "block";
+  if (tableFooterEl) tableFooterEl.style.display = "block";
+}
+
 
 
 
