@@ -309,7 +309,8 @@ summaryEl.style.display = "none";
 outEl.style.display = "block";
 
           if (rows.length) renderTeams(rows);
-          predictBtn.disabled = false;
+          predictBtn.disabled = !teamSel.value;
+
         })
         .catch(function(e){
           statusEl.textContent = "Failed to load standings: " + e.message;
