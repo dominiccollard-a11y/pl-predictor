@@ -112,7 +112,7 @@ function ordinal(n){
     case 3: return n + "rd";
     default: return n + "th";
   }
-
+}
     function findTotal(payload){
       var standings = (payload && payload.standings) ? payload.standings : [];
       for (var i=0; i<standings.length; i++){
