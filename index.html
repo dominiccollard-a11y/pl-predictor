@@ -788,19 +788,18 @@ statusEl.textContent += " | HOME_ADV=" + HOME_ADV.toFixed(3);
 
       projected.sort(function(a,b){ return b.projPts - a.projPts; });
 
-      var pos = null;
-      for (var j=0; j<projected.length; j++){
+            var pos = null;
+      for (var j = 0; j < projected.length; j++){
         if (projected[j].teamId === selectedId){ pos = j+1; break; }
       }
 
-     
-  statusEl.textContent = "[DBG] Predicted finish for " + selectedName + ": " + (pos || "?") + "th | HOME_ADV=" + Number(HOME_ADV).toFixed(3) + " | SCALE=" + Number(SIGMOID_SCALE).toFixed(2);
-
-  " | HOME_ADV=" + HOME_ADV.toFixed(3) +
-  " | SCALE=" + SIGMOID_SCALE.toFixed(2);
-
+      statusEl.textContent =
+        "[DBG] Predicted finish for " + selectedName + ": " + (pos || "?") + "th" +
+        " | HOME_ADV=" + Number(HOME_ADV).toFixed(3) +
+        " | SCALE=" + Number(SIGMOID_SCALE).toFixed(2);
 
       var lines = [];
+
       lines.push("#  Team                         ProjPts  RH RA  HPPG APPG  L5PPG H2HPPG");
       lines.push("-------------------------------------------------------------------------");
       for (var k=0; k<projected.length; k++){
