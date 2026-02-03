@@ -8,7 +8,7 @@
     body{font-family:system-ui;margin:24px;max-width:900px}
     select,button{padding:10px;font-size:16px}
     .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-    pre{background:#111;color:#eee;padding:12px;border-radius:8px;overflow:auto}
+    pre{background:#111;color:#eee;padding:12px;border-radius:8px;overflow:auto;white-space:pre}
   </style>
 </head>
 <body>
@@ -20,15 +20,14 @@
       <option>Load standings first…</option>
     </select>
     <button id="btn">Get live standings</button>
-<button id="predict" disabled>Run predictor</button>
-
+    <button id="predict" disabled>Run predictor</button>
   </div>
 
   <p id="status">Waiting…</p>
   <pre id="out">No data yet.</pre>
 
   <script>
-    // If anything breaks, show it on the page
+    // Show runtime errors on the page (syntax errors won't reach here)
     window.onerror = function (msg, src, line, col) {
       var s = document.getElementById("status");
       var o = document.getElementById("out");
@@ -37,99 +36,41 @@
       return false;
     };
 
-    var ENDPOINT = "/.netlify/functions/pl-standings";
-var MATCHES_ENDPOINT = "/.netlify/functions/pl-matches";
+    var STANDINGS_ENDPOINT = "/.netlify/functions/pl-standings";
+    var MATCHES_ENDPOINT   = "/.netlify/functions/pl-matches";
 
-    var teamSel = document.getElementById("team");
-    var btn = document.getElementById("btn");
-    var predictBtn = document.getElementById("predict");
+    var teamSel   = document.getElementById("team");
+    var btn       = document.getElementById("btn");
+    var predictBtn= document.getElementById("predict");
+    var statusEl  = document.getElementById("status");
+    var outEl     = document.getElementById("out");
 
-    var statusEl = document.getElementById("status");
-    var out = document.getElementById("out");
-var latestPayload = null;
+    var latestStandingsPayload = null;
 
     statusEl.textContent = "JS loaded. Click “Get live standings”.";
-    function formatStandings(rows){
-  var lines = [];
-  lines.push("#  Team                         MP  Pts  GD");
-  lines.push("------------------------------------------------");
-  for (var i = 0; i < rows.length; i++){
-    var r = rows[i];
-    var name = (r.team && (r.team.name || r.team.shortName || r.team.tla)) || "";
-    var mp = r.playedGames || 0;
-    var pts = r.points || 0;
-    var gd = (typeof r.goalDifference === "number") ? r.goalDifference : 0;
 
-    var teamCol = (name + "                              ").slice(0, 28);
-    var line = (String(i+1) + "  ").slice(0,3) + teamCol +
-      "  " + String(mp).padStart(2, " ") +
-      "  " + String(pts).padStart(3, " ") +
-      "  " + String(gd).padStart(3, " ");
-    lines.push(line);
-  }
-  return lines.join("\n");
-}
-
-function formatProjected(projected){
-  var lines = [];
-  lines.push("#  Team                         Projected Pts");
-  lines.push("------------------------------------------------");
-  for (var i = 0; i < projected.length; i++){
-    var p = projected[i];
-    var teamCol = (p.team + "                              ").slice(0, 28);
-    var line = (String(i+1) + "  ").slice(0,3) + teamCol + "  " + p.projPts.toFixed(1);
-    lines.push(line);
-  }
-  return lines.join("\n");
-}
-
-function formatStandings(rows){
-  var lines = [];
-  lines.push("#  Team                         MP  Pts  GD");
-  lines.push("------------------------------------------------");
-  for (var i = 0; i < rows.length; i++){
-    var r = rows[i];
-    var name = (r.team && (r.team.name || r.team.shortName || r.team.tla)) || "";
-    var mp = r.playedGames || 0;
-    var pts = r.points || 0;
-    var gd = (typeof r.goalDifference === "number") ? r.goalDifference : 0;
-
-    // pad team name a bit for readability
-    var teamCol = (name + "                              ").slice(0, 28);
-    var line = (String(i+1) + "  ").slice(0,3) + teamCol +
-      "  " + String(mp).padStart(2, " ") +
-      "  " + String(pts).padStart(3, " ") +
-      "  " + String(gd).padStart(3, " ");
-    lines.push(line);
-  }
-  return lines.join("\n");
-}
-
-function formatProjected(projected){
-  var lines = [];
-  lines.push("#  Team                         Projected Pts");
-  lines.push("------------------------------------------------");
-  for (var i = 0; i < projected.length; i++){
-    var p = projected[i];
-    var teamCol = (p.team + "                              ").slice(0, 28);
-    var line = (String(i+1) + "  ").slice(0,3) + teamCol + "  " + p.projPts.toFixed(1);
-    lines.push(line);
-  }
-  return lines.join("\n");
-}
+    function padRight(str, n){
+      str = String(str || "");
+      while (str.length < n) str += " ";
+      return str.slice(0, n);
+    }
+    function padLeft(str, n){
+      str = String(str || "");
+      while (str.length < n) str = " " + str;
+      return str.slice(-n);
+    }
 
     function findTotal(payload){
       var standings = (payload && payload.standings) ? payload.standings : [];
-      for (var i = 0; i < standings.length; i++){
-        var s = standings[i];
-        if (s && s.type === "TOTAL") return s;
+      for (var i=0; i<standings.length; i++){
+        if (standings[i] && standings[i].type === "TOTAL") return standings[i];
       }
       return null;
     }
 
     function renderTeams(rows){
       var teams = [];
-      for (var i = 0; i < rows.length; i++){
+      for (var i=0; i<rows.length; i++){
         var r = rows[i];
         var name = (r.team && (r.team.name || r.team.shortName || r.team.tla)) || "";
         if (name) teams.push(name);
@@ -137,182 +78,193 @@ function formatProjected(projected){
       teams.sort(function(a,b){ return a.localeCompare(b); });
 
       var html = "";
-      for (var j = 0; j < teams.length; j++){
+      for (var j=0; j<teams.length; j++){
         html += "<option>" + teams[j] + "</option>";
       }
       teamSel.innerHTML = html;
       teamSel.disabled = false;
     }
 
+    function formatStandings(rows){
+      var lines = [];
+      lines.push("#  Team                         MP  Pts  GD");
+      lines.push("------------------------------------------------");
+      for (var i=0; i<rows.length; i++){
+        var r = rows[i];
+        var name = (r.team && (r.team.name || r.team.shortName || r.team.tla)) || "";
+        var mp = r.playedGames || 0;
+        var pts = r.points || 0;
+        var gd = (typeof r.goalDifference === "number") ? r.goalDifference : 0;
+
+        var line = padLeft(i+1, 2) + "  " + padRight(name, 28) +
+          "  " + padLeft(mp, 2) +
+          "  " + padLeft(pts, 3) +
+          "  " + padLeft(gd, 3);
+        lines.push(line);
+      }
+      return lines.join("\n");
+    }
+
+    function buildLast5FormMap(matches){
+      // We collect results per team, then take the last 5.
+      // NOTE: This assumes the API returns matches in chronological order.
+      // If we later find it's not, we'll sort by match.utcDate.
+      var map = {};
+
+      function addPts(teamName, pts){
+        if (!map[teamName]) map[teamName] = [];
+        map[teamName].push(pts);
+      }
+
+      for (var i=0; i<matches.length; i++){
+        var m = matches[i];
+        if (!m || m.status !== "FINISHED") continue;
+
+        var home = (m.homeTeam && m.homeTeam.name) ? m.homeTeam.name : null;
+        var away = (m.awayTeam && m.awayTeam.name) ? m.awayTeam.name : null;
+        if (!home || !away) continue;
+
+        var hs = (m.score && m.score.fullTime) ? m.score.fullTime.home : null;
+        var as = (m.score && m.score.fullTime) ? m.score.fullTime.away : null;
+        if (typeof hs !== "number" || typeof as !== "number") continue;
+
+        var homePts = 0, awayPts = 0;
+        if (hs > as) { homePts = 3; awayPts = 0; }
+        else if (hs < as) { homePts = 0; awayPts = 3; }
+        else { homePts = 1; awayPts = 1; }
+
+        addPts(home, homePts);
+        addPts(away, awayPts);
+      }
+
+      // Convert to last-5 PPG
+      var out = {};
+      for (var team in map){
+        var list = map[team];
+        var start = Math.max(0, list.length - 5);
+        var sum = 0;
+        var games = 0;
+        for (var j=start; j<list.length; j++){
+          sum += list[j];
+          games += 1;
+        }
+        out[team] = { games: games, ppg: games ? (sum / games) : 0 };
+      }
+      return out;
+    }
+
+    function formatProjected(projected){
+      var lines = [];
+      lines.push("#  Team                         ProjPts  SeasonPPG  Last5PPG");
+      lines.push("----------------------------------------------------------------");
+      for (var i=0; i<projected.length; i++){
+        var p = projected[i];
+        var line = padLeft(i+1, 2) + "  " + padRight(p.team, 28) +
+          "  " + padLeft(p.projPts.toFixed(1), 7) +
+          "  " + padLeft(p.seasonPPG.toFixed(2), 9) +
+          "  " + padLeft(p.last5PPG.toFixed(2), 8);
+        lines.push(line);
+      }
+      return lines.join("\n");
+    }
+
     function loadStandings(){
       statusEl.textContent = "Loading live standings…";
-      out.textContent = "";
+      outEl.textContent = "";
 
-      fetch(ENDPOINT + "?_=" + Date.now())
+      fetch(STANDINGS_ENDPOINT + "?_=" + Date.now())
         .then(function(r){
           if (!r.ok) throw new Error("HTTP " + r.status);
           return r.json();
         })
         .then(function(payload){
+          latestStandingsPayload = payload;
+
           var total = findTotal(payload);
           var rows = (total && total.table) ? total.table : [];
-latestPayload = payload;
 
           statusEl.textContent = "Loaded " + rows.length + " teams.";
-          out.textContent = formatStandings(rows);
-
+          outEl.textContent = formatStandings(rows);
 
           if (rows.length) renderTeams(rows);
           predictBtn.disabled = false;
-
         })
         .catch(function(e){
           statusEl.textContent = "Failed to load standings: " + e.message;
-          out.textContent = e.message;
+          outEl.textContent = e.message;
         });
     }
 
-    // Button click
-    btn.addEventListener("click", loadStandings);
-    function buildLast5FormMap(matches){
-  // Returns: { "Arsenal FC": { pts: X, games: Y, ppg: Z } , ... }
-  var map = {};
-
-  function addTeam(teamName, pts){
-    if (!map[teamName]) map[teamName] = { ptsList: [] };
-    map[teamName].ptsList.push(pts);
-  }
-
-  // Only FINISHED matches with full-time scores
-  for (var i = 0; i < matches.length; i++){
-    var m = matches[i];
-    if (!m || m.status !== "FINISHED") continue;
-
-    var home = m.homeTeam && m.homeTeam.name ? m.homeTeam.name : null;
-    var away = m.awayTeam && m.awayTeam.name ? m.awayTeam.name : null;
-    if (!home || !away) continue;
-
-    var hs = m.score && m.score.fullTime ? m.score.fullTime.home : null;
-    var as = m.score && m.score.fullTime ? m.score.fullTime.away : null;
-    if (typeof hs !== "number" || typeof as !== "number") continue;
-
-    // Determine points for this match
-    var homePts = 0, awayPts = 0;
-    if (hs > as) { homePts = 3; awayPts = 0; }
-    else if (hs < as) { homePts = 0; awayPts = 3; }
-    else { homePts = 1; awayPts = 1; }
-
-    addTeam(home, homePts);
-    addTeam(away, awayPts);
-  }
-
-  // Convert to last-5 ppg (use most recent 5: football-data matches are usually chronological; if not, we’ll sort later in a later step)
-  var out = {};
-  for (var team in map){
-    var list = map[team].ptsList;
-    var start = Math.max(0, list.length - 5);
-    var sum = 0;
-    var games = 0;
-    for (var j = start; j < list.length; j++){
-      sum += list[j];
-      games += 1;
-    }
-    out[team] = { pts: sum, games: games, ppg: games ? (sum / games) : 0 };
-  }
-  return out;
-}
-
-    predictBtn.addEventListener("click", function(){
-  var selected = teamSel.value;
-
-  if (!latestPayload) {
-    statusEl.textContent = "Please load live standings first.";
-    return;
-  }
-
-  statusEl.textContent = "Running predictor (loading matches)…";
-  out.textContent = "Working…";
-
-  fetch(MATCHES_ENDPOINT + "?status=FINISHED&_=" + Date.now())
-    .then(function(r){
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.json();
-    })
-    .then(function(matchPayload){
-      var matches = matchPayload && matchPayload.matches ? matchPayload.matches : [];
-      var formMap = buildLast5FormMap(matches);
-
-      var total = findTotal(latestPayload);
-      var rows = (total && total.table) ? total.table : [];
-      if (!rows.length) {
-        statusEl.textContent = "No standings data available.";
+    function runPredictor(){
+      if (!latestStandingsPayload){
+        statusEl.textContent = "Please load live standings first.";
         return;
       }
 
-      // Project points with form adjustment
-      // Baseline: current PPG over 38
-      // Form adjustment: compare last5 PPG vs season PPG and nudge projection
-      // Weight is intentionally conservative for v1
-      var projected = [];
-      for (var i = 0; i < rows.length; i++){
-        var rrow = rows[i];
-        var name = (rrow.team && (rrow.team.name || rrow.team.shortName || rrow.team.tla)) || "";
-        var played = rrow.playedGames || 0;
-        var points = rrow.points || 0;
+      var selected = teamSel.value;
+      statusEl.textContent = "Running predictor (loading matches)…";
+      outEl.textContent = "Working…";
 
-        var seasonPPG = played ? (points / played) : 0;
-        var baseProj = seasonPPG * 38;
+      fetch(MATCHES_ENDPOINT + "?status=FINISHED&_=" + Date.now())
+        .then(function(r){
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.json();
+        })
+        .then(function(matchPayload){
+          var matches = (matchPayload && matchPayload.matches) ? matchPayload.matches : [];
+          var formMap = buildLast5FormMap(matches);
 
-        var f = formMap[name];
-        var last5PPG = (f && f.games) ? f.ppg : seasonPPG;
+          var total = findTotal(latestStandingsPayload);
+          var rows = (total && total.table) ? total.table : [];
+          if (!rows.length){
+            statusEl.textContent = "No standings data available.";
+            return;
+          }
 
-        // Nudge: if last5 is better than season, increase projection a bit, and vice versa
-        var delta = last5PPG - seasonPPG;
+          var projected = [];
+          for (var i=0; i<rows.length; i++){
+            var rrow = rows[i];
+            var name = (rrow.team && (rrow.team.name || rrow.team.shortName || rrow.team.tla)) || "";
+            var played = rrow.playedGames || 0;
+            var points = rrow.points || 0;
 
-        // Weight factor: remaining games * small multiplier
-        var remainingGames = Math.max(0, 38 - played);
-        var formBoost = delta * remainingGames * 0.35; // tune later
+            var seasonPPG = played ? (points / played) : 0;
+            var baseProj = seasonPPG * 38;
 
-        var projPts = baseProj + formBoost;
+            var f = formMap[name];
+            var last5PPG = (f && f.games) ? f.ppg : seasonPPG;
 
-        projected.push({
-          team: name,
-          projPts: projPts,
-          seasonPPG: seasonPPG,
-          last5PPG: last5PPG
+            // Conservative adjustment based on last-5 vs season
+            var delta = last5PPG - seasonPPG;
+            var remainingGames = Math.max(0, 38 - played);
+            var formBoost = delta * remainingGames * 0.35;
+
+            projected.push({
+              team: name,
+              projPts: baseProj + formBoost,
+              seasonPPG: seasonPPG,
+              last5PPG: last5PPG
+            });
+          }
+
+          projected.sort(function(a,b){ return b.projPts - a.projPts; });
+
+          var pos = null;
+          for (var j=0; j<projected.length; j++){
+            if (projected[j].team === selected){ pos = j+1; break; }
+          }
+
+          statusEl.textContent = "Predicted finish for " + selected + ": " + (pos || "?") + "th";
+          outEl.textContent = formatProjected(projected);
+        })
+        .catch(function(e){
+          statusEl.textContent = "Predictor failed: " + e.message;
+          outEl.textContent = e.message;
         });
-      }
+    }
 
-      projected.sort(function(a,b){ return b.projPts - a.projPts; });
-
-      var pos = null;
-      for (var j = 0; j < projected.length; j++){
-        if (projected[j].team === selected){ pos = j + 1; break; }
-      }
-
-      statusEl.textContent = "Predicted finish for " + selected + ": " + (pos || "?") + "th";
-
-      // Display a readable projected table (top 20)
-      var lines = [];
-      lines.push("#  Team                         Projected  SeasonPPG  Last5PPG");
-      lines.push("----------------------------------------------------------------");
-      for (var k = 0; k < projected.length; k++){
-        var p = projected[k];
-        var teamCol = (p.team + "                              ").slice(0, 28);
-        var line =
-          (String(k+1) + "  ").slice(0,3) +
-          teamCol +
-          "  " + p.projPts.toFixed(1).padStart(8, " ") +
-          "  " + p.seasonPPG.toFixed(2).padStart(8, " ") +
-          "  " + p.last5PPG.toFixed(2).padStart(7, " ");
-        lines.push(line);
-      }
-      out.textContent = lines.join("\n");
-    })
-    .catch(function(e){
-      statusEl.textContent = "Predictor failed: " + e.message;
-      out.textContent = e.message;
-    });
+    btn.addEventListener("click", loadStandings);
+    predictBtn.addEventListener("click", runPredictor);
   </script>
 </body>
 </html>
