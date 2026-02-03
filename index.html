@@ -43,6 +43,15 @@
 </div>
 
 <pre id="out">No data yet.</pre>
+<div id="tableFooter" style="display:none; margin-top:12px; font-size:14px; line-height:1.4; color:#333;">
+  <b>Headings:</b><br>
+  ProjPts = projected end-of-season points<br>
+  RH / RA = remaining home / away games<br>
+  Hs = expected home points per game (based on actual home form)<br>
+  As = expected away points per game (based on actual away form)<br>
+  L5s = expected future form based on last 5 league matches<br>
+  H2Hs = adjustment based on result of previous result vs remaining opponents
+</div>
 
 
   <script>
@@ -62,7 +71,9 @@
    
     var predictBtn= document.getElementById("predict");
     var statusEl  = document.getElementById("status");
-    var outEl     = document.getElementById("out");
+    var outEl     = document.getElementById("out"); 
+    var tableFooterEl = document.getElementById("tableFooter");
+
 var summaryEl = document.getElementById("summary");
 var curEl     = document.getElementById("cur");
 var predEl    = document.getElementById("pred");
@@ -256,10 +267,13 @@ function showSummary(){
   outEl.style.display = "none";
 }
 
-function showTable(text){
-  outEl.textContent = text;
-  outEl.style.display = "block";
+function showSummary(){
+  summaryEl.style.display = "block";
+  outEl.style.display = "none";
+  if (tableFooterEl) tableFooterEl.style.display = "none";
 }
+
+
 
     function loadStandings(){
       statusEl.textContent = "Loading live standings…";
@@ -280,6 +294,8 @@ lastUpdatedText = new Date().toLocaleString();
           statusEl.textContent = "Current league table • Last updated: " + lastUpdatedText;
 
           outEl.textContent = formatStandings(rows);
+          if (tableFooterEl) tableFooterEl.style.display = "none";
+
 summaryEl.style.display = "none";
 outEl.style.display = "block";
 
