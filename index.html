@@ -1027,30 +1027,39 @@ predEl.textContent = (predPos ? ordinal(predPos) : "?") + " • " + predPts.toFi
         " | SCALE=" + Number(SIGMOID_SCALE).toFixed(2);
 
             var lines = [];
-      lines.push("#  Team                         ProjPts RH RA  H   A   L5  H2H   Hs  As  L5s H2Hs");
-      lines.push("----------------------------------------------------------------------------------");
-      for (var k=0; k<projected.length; k++){
-        var p = projected[k];
-        var line = padLeft(k+1, 2) + "  " + padRight(p.team, 28) +
-          "  " + padLeft(p.projPts.toFixed(1), 7) +
-          " "  + padLeft(p.RH, 2) +
-          " "  + padLeft(p.RA, 2) +
+lines.push(
+  padRight("#", 3) +
+  padRight("Team", 28) +
+  padLeft("ProjPts", 8) + " " +
+  padLeft("RH", 2) + " " +
+  padLeft("RA", 2) + " " +
+  padLeft("Hs", 5) + " " +
+  padLeft("As", 5) + " " +
+  padLeft("L5s", 5) + " " +
+  padLeft("H2Hs", 5)
+);
 
-          // Raw
-          "  " + padLeft(p.HPPG.toFixed(2), 4) +
-          " "  + padLeft(p.APPG.toFixed(2), 4) +
-          " "  + padLeft(p.L5PPG.toFixed(2), 4) +
-          " "  + padLeft(p.H2HPPG.toFixed(2), 4) +
+lines.push("--------------------------------------------------------------------------");
 
-          // Smoothed
-          "   " + padLeft(p.HPPG_S.toFixed(2), 4) +
-          " "   + padLeft(p.APPG_S.toFixed(2), 4) +
-          " "   + padLeft(p.L5PPG_S.toFixed(2), 4) +
-          " "   + padLeft(p.H2HPPG_S.toFixed(2), 4);
+for (var k=0; k<projected.length; k++){
+  var p = projected[k];
 
-        lines.push(line);
-      }
-      lastMathText = lines.join("\n");
+  var line =
+    padLeft((k+1), 2) + " " +
+    padRight(p.team, 28) +
+    padLeft(p.projPts.toFixed(1), 8) + " " +
+    padLeft(p.RH, 2) + " " +
+    padLeft(p.RA, 2) + " " +
+    padLeft(p.HPPG_S.toFixed(2), 5) + " " +
+    padLeft(p.APPG_S.toFixed(2), 5) + " " +
+    padLeft(p.L5PPG_S.toFixed(2), 5) + " " +
+    padLeft(p.H2HPPG_S.toFixed(2), 5);
+
+  lines.push(line);
+}
+
+lastMathText = lines.join("\n");
+
 showSummary();
 statusEl.textContent = "Prediction ready for " + selectedName + " • Last updated: " + new Date().toLocaleString();
 
