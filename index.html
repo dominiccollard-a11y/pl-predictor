@@ -17,21 +17,32 @@
   <div class="row">
     <label for="team">Team:</label>
     <select id="team" disabled>
-      <option>Loading teams…</option>
+      <option>Load standings first…</option>
     </select>
-    <button id="btn" disabled>Get live standings</button>
+    <button id="btn">Get live standings</button>
   </div>
 
   <p id="status">Waiting…</p>
   <pre id="out">No data yet.</pre>
 
   <script>
+    // If anything breaks, show it on the page
+    window.onerror = function (msg, src, line, col) {
+      var s = document.getElementById("status");
+      var o = document.getElementById("out");
+      if (s) s.textContent = "JS error: " + msg;
+      if (o) o.textContent = "Source: " + src + "\nLine: " + line + ":" + col + "\n\n" + msg;
+      return false;
+    };
+
     var ENDPOINT = "/.netlify/functions/pl-standings";
 
     var teamSel = document.getElementById("team");
     var btn = document.getElementById("btn");
     var statusEl = document.getElementById("status");
     var out = document.getElementById("out");
+
+    statusEl.textContent = "JS loaded. Click “Get live standings”.";
 
     function findTotal(payload){
       var standings = (payload && payload.standings) ? payload.standings : [];
@@ -55,4 +66,36 @@
       for (var j = 0; j < teams.length; j++){
         html += "<option>" + teams[j] + "</option>";
       }
+      teamSel.innerHTML = html;
+      teamSel.disabled = false;
+    }
 
+    function loadStandings(){
+      statusEl.textContent = "Loading live standings…";
+      out.textContent = "";
+
+      fetch(ENDPOINT + "?_=" + Date.now())
+        .then(function(r){
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.json();
+        })
+        .then(function(payload){
+          var total = findTotal(payload);
+          var rows = (total && total.table) ? total.table : [];
+
+          statusEl.textContent = "Loaded " + rows.length + " teams.";
+          out.textContent = JSON.stringify(payload, null, 2);
+
+          if (rows.length) renderTeams(rows);
+        })
+        .catch(function(e){
+          statusEl.textContent = "Failed to load standings: " + e.message;
+          out.textContent = e.message;
+        });
+    }
+
+    // Button click
+    btn.addEventListener("click", loadStandings);
+  </script>
+</body>
+</html>
