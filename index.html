@@ -46,6 +46,9 @@
     var outEl     = document.getElementById("out");
 
     var latestStandingsPayload = null;
+    var teamIdToName = {};
+var teamIdToShort = {};
+
 
     statusEl.textContent = "JS loaded. Click “Get live standings”.";
 
@@ -69,21 +72,34 @@
     }
 
     function renderTeams(rows){
-      var teams = [];
-      for (var i=0; i<rows.length; i++){
-        var r = rows[i];
-        var name = (r.team && (r.team.name || r.team.shortName || r.team.tla)) || "";
-        if (name) teams.push(name);
-      }
-      teams.sort(function(a,b){ return a.localeCompare(b); });
+  var teams = [];
+  teamIdToName = {};
+  teamIdToShort = {};
 
-      var html = "";
-      for (var j=0; j<teams.length; j++){
-        html += "<option>" + teams[j] + "</option>";
-      }
-      teamSel.innerHTML = html;
-      teamSel.disabled = false;
+  for (var i=0; i<rows.length; i++){
+    var r = rows[i];
+    var id = (r.team && typeof r.team.id === "number") ? String(r.team.id) : null;
+    var name = (r.team && (r.team.name || r.team.shortName || r.team.tla)) || "";
+    var shortName = (r.team && (r.team.shortName || r.team.tla || r.team.name)) || name;
+
+    if (id && name){
+      teamIdToName[id] = name;
+      teamIdToShort[id] = shortName;
+      teams.push({ id: id, name: name });
     }
+  }
+
+  teams.sort(function(a,b){ return a.name.localeCompare(b.name); });
+
+  var html = "";
+  for (var j=0; j<teams.length; j++){
+    html += "<option value=\"" + teams[j].id + "\">" + teams[j].name + "</option>";
+  }
+
+  teamSel.innerHTML = html;
+  teamSel.disabled = false;
+}
+
 
     function formatStandings(rows){
       var lines = [];
@@ -365,7 +381,9 @@ function expectedPoints(homeTeam, awayTeam, homeEff, awayEff){
     return;
   }
 
-  var selected = teamSel.value;
+  var selectedId = teamSel.value;
+var selected = teamIdToName[selectedId] || (teamSel.options[teamSel.selectedIndex] ? teamSel.options[teamSel.selectedIndex].text : selectedId);
+
   statusEl.textContent = "Running predictor (loading matches)…";
   outEl.textContent = "Working…";
 
