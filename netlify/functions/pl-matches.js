@@ -18,10 +18,18 @@ exports.handler = async (event) => {
  const status = (event.queryStringParameters && event.queryStringParameters.status) || "ALL";
 
 
-  const url =
-    "https://api.football-data.org/v4/competitions/PL/matches" +
-    "?season=" + encodeURIComponent(season) +
-    "&status=" + encodeURIComponent(status);
+  // status is OPTIONAL. If not provided, we DO NOT include it.
+const qs = event.queryStringParameters || {};
+const status = qs.status; // e.g. "FINISHED" or "SCHEDULED"
+
+let url =
+  "https://api.football-data.org/v4/competitions/PL/matches" +
+  "?season=" + encodeURIComponent(season);
+
+if (status) {
+  url += "&status=" + encodeURIComponent(status);
+}
+
 
   try {
     const response = await fetch(url, {
