@@ -213,15 +213,20 @@
     .then(function(matchPayload){
       var matches = (matchPayload && matchPayload.matches) ? matchPayload.matches : [];
 
-      // Build form map (last 5 finished)
-      // (still assumes matches are chronological; we can improve later)
+      // Split finished vs remaining
       var finishedOnly = [];
+      var remainingOnly = [];
       for (var i=0; i<matches.length; i++){
-        if (matches[i] && matches[i].status === "FINISHED") finishedOnly.push(matches[i]);
+        var m = matches[i];
+        if (!m) continue;
+        if (m.status === "FINISHED") finishedOnly.push(m);
+        else remainingOnly.push(m);
       }
+
+      // 1) Last-5 form map (from finished matches)
       var formMap = buildLast5FormMap(finishedOnly);
 
-      // Build home/away PPG maps from finished matches
+      // 2) Home/Away PPG maps (from finished matches)
       var homeAgg = {}; // team -> {pts, games}
       var awayAgg = {}; // team -> {pts, games}
 
@@ -232,13 +237,13 @@
       }
 
       for (var f=0; f<finishedOnly.length; f++){
-        var m = finishedOnly[f];
-        var home = (m.homeTeam && m.homeTeam.name) ? m.homeTeam.name : null;
-        var away = (m.awayTeam && m.awayTeam.name) ? m.awayTeam.name : null;
+        var fm = finishedOnly[f];
+        var home = (fm.homeTeam && fm.homeTeam.name) ? fm.homeTeam.name : null;
+        var away = (fm.awayTeam && fm.awayTeam.name) ? fm.awayTeam.name : null;
         if (!home || !away) continue;
 
-        var hs = (m.score && m.score.fullTime) ? m.score.fullTime.home : null;
-        var as = (m.score && m.score.fullTime) ? m.score.fullTime.away : null;
+        var hs = (fm.score && fm.score.fullTime) ? fm.score.fullTime.home : null;
+        var as = (fm.score && fm.score.fullTime) ? fm.score.fullTime.away : null;
         if (typeof hs !== "number" || typeof as !== "number") continue;
 
         var homePts = 0, awayPts = 0;
@@ -256,8 +261,7 @@
         return a.pts / a.games;
       }
 
-      // Remaining fixtures: anything not FINISHED (SCHEDULED, TIMED, etc.)
-      // We'll count how many home + away remaining per team.
+      // Remaining home/away counts
       var remainHome = {};
       var remainAway = {};
       function inc(map, team){
@@ -265,14 +269,84 @@
         map[team] += 1;
       }
 
-      for (var r=0; r<matches.length; r++){
-        var mm = matches[r];
-        if (!mm || mm.status === "FINISHED") continue;
-        var h = (mm.homeTeam && mm.homeTeam.name) ? mm.homeTeam.name : null;
-        var a = (mm.awayTeam && mm.awayTeam.name) ? mm.awayTeam.name : null;
+      for (var r=0; r<remainingOnly.length; r++){
+        var rm = remainingOnly[r];
+        var h = (rm.homeTeam && rm.homeTeam.name) ? rm.homeTeam.name : null;
+        var a = (rm.awayTeam && rm.awayTeam.name) ? rm.awayTeam.name : null;
         if (!h || !a) continue;
         inc(remainHome, h);
         inc(remainAway, a);
+      }
+
+      // 3) Head-to-head vs remaining opponents (this season)
+      // Build a "latest result between pair" map from finished matches.
+      function pairKey(a,b){
+        return (a < b) ? (a + "||" + b) : (b + "||" + a);
+      }
+
+      var pairLatest = {}; // key -> {a,b,date,ptsA,ptsB} where a<b
+
+      function matchTime(ms){
+        var d = ms && ms.utcDate ? Date.parse(ms.utcDate) : 0;
+        return isNaN(d) ? 0 : d;
+      }
+
+      for (var x=0; x<finishedOnly.length; x++){
+        var pm = finishedOnly[x];
+        var A = (pm.homeTeam && pm.homeTeam.name) ? pm.homeTeam.name : null;
+        var B = (pm.awayTeam && pm.awayTeam.name) ? pm.awayTeam.name : null;
+        if (!A || !B) continue;
+
+        var hs2 = (pm.score && pm.score.fullTime) ? pm.score.fullTime.home : null;
+        var as2 = (pm.score && pm.score.fullTime) ? pm.score.fullTime.away : null;
+        if (typeof hs2 !== "number" || typeof as2 !== "number") continue;
+
+        var ptsHome = 0, ptsAway = 0;
+        if (hs2 > as2) { ptsHome = 3; ptsAway = 0; }
+        else if (hs2 < as2) { ptsHome = 0; ptsAway = 3; }
+        else { ptsHome = 1; ptsAway = 1; }
+
+        // store in sorted order a<b
+        var aName = A, bName = B, ptsA = ptsHome, ptsB = ptsAway;
+        if (bName < aName){
+          aName = B; bName = A;
+          ptsA = ptsAway; ptsB = ptsHome;
+        }
+
+        var key = aName + "||" + bName;
+        var tstamp = matchTime(pm);
+
+        if (!pairLatest[key] || tstamp > pairLatest[key].date){
+          pairLatest[key] = { a: aName, b: bName, date: tstamp, ptsA: ptsA, ptsB: ptsB };
+        }
+      }
+
+      // For each team, average points from the earlier match vs each remaining opponent (where we have that earlier match)
+      var h2hSum = {};   // team -> sum points from previous meeting
+      var h2hCount = {}; // team -> number of remaining opponents with a previous meeting found
+
+      function addH2H(team, pts){
+        if (!h2hSum[team]) h2hSum[team] = 0;
+        if (!h2hCount[team]) h2hCount[team] = 0;
+        h2hSum[team] += pts;
+        h2hCount[team] += 1;
+      }
+
+      for (var y=0; y<remainingOnly.length; y++){
+        var nm = remainingOnly[y];
+        var homeN = (nm.homeTeam && nm.homeTeam.name) ? nm.homeTeam.name : null;
+        var awayN = (nm.awayTeam && nm.awayTeam.name) ? nm.awayTeam.name : null;
+        if (!homeN || !awayN) continue;
+
+        var key2 = pairKey(homeN, awayN);
+        var rec = pairLatest[key2];
+        if (!rec) continue; // no previous match found
+
+        var homePtsPrev = (rec.a === homeN) ? rec.ptsA : rec.ptsB;
+        var awayPtsPrev = (rec.a === awayN) ? rec.ptsA : rec.ptsB;
+
+        addH2H(homeN, homePtsPrev);
+        addH2H(awayN, awayPtsPrev);
       }
 
       // Standings rows
@@ -284,10 +358,7 @@
       }
 
       // Project points:
-      // current points +
-      // remainingHome * homePPG +
-      // remainingAway * awayPPG
-      // plus a conservative form nudge
+      // points + RH*HPPG + RA*APPG + form boost + head-to-head (small) boost
       var projected = [];
       for (var t=0; t<rows.length; t++){
         var row = rows[t];
@@ -299,25 +370,30 @@
 
         var hPPG = ppgFromAgg(homeAgg, team);
         var aPPG = ppgFromAgg(awayAgg, team);
-
-        // If we don't have enough data yet, fall back to seasonPPG
         if (hPPG === null) hPPG = seasonPPG;
         if (aPPG === null) aPPG = seasonPPG;
 
         var rh = remainHome[team] || 0;
         var ra = remainAway[team] || 0;
 
-        // Base projection from home/away split
         var baseProj = points + (rh * hPPG) + (ra * aPPG);
 
-        // Form adjustment (last 5 vs season)
+        // Form boost (still #1 priority)
         var fobj = formMap[team];
         var last5PPG = (fobj && fobj.games) ? fobj.ppg : seasonPPG;
-        var delta = last5PPG - seasonPPG;
+        var deltaForm = last5PPG - seasonPPG;
         var remainingGames = Math.max(0, 38 - played);
-        var formBoost = delta * remainingGames * 0.25; // slightly lower because we now model fixtures split
+        var formBoost = deltaForm * remainingGames * 0.25;
 
-        var projPts = baseProj + formBoost;
+        // Head-to-head boost (your #3 priority; smallest weight)
+        var h2hPPG = seasonPPG;
+        if (h2hCount[team]) {
+          h2hPPG = h2hSum[team] / h2hCount[team];
+        }
+        var deltaH2H = h2hPPG - seasonPPG;
+        var h2hBoost = deltaH2H * remainingGames * 0.10;
+
+        var projPts = baseProj + formBoost + h2hBoost;
 
         projected.push({
           team: team,
@@ -327,7 +403,8 @@
           homePPG: hPPG,
           awayPPG: aPPG,
           remHome: rh,
-          remAway: ra
+          remAway: ra,
+          h2hPPG: h2hPPG
         });
       }
 
@@ -342,17 +419,18 @@
 
       // Output
       var lines = [];
-      lines.push("#  Team                         ProjPts  RH  RA  HPPG  APPG  L5PPG");
-      lines.push("---------------------------------------------------------------------");
+      lines.push("#  Team                         ProjPts  RH RA  HPPG APPG  L5PPG H2HPPG");
+      lines.push("-------------------------------------------------------------------------");
       for (var k=0; k<projected.length; k++){
         var p = projected[k];
         var line = padLeft(k+1, 2) + "  " + padRight(p.team, 28) +
           "  " + padLeft(p.projPts.toFixed(1), 7) +
           "  " + padLeft(p.remHome, 2) +
-          "  " + padLeft(p.remAway, 2) +
-          "  " + padLeft(p.homePPG.toFixed(2), 5) +
-          "  " + padLeft(p.awayPPG.toFixed(2), 5) +
-          "  " + padLeft(p.last5PPG.toFixed(2), 5);
+          " "  + padLeft(p.remAway, 2) +
+          "  " + padLeft(p.homePPG.toFixed(2), 4) +
+          " "  + padLeft(p.awayPPG.toFixed(2), 4) +
+          "  " + padLeft(p.last5PPG.toFixed(2), 5) +
+          "  " + padLeft(p.h2hPPG.toFixed(2), 5);
         lines.push(line);
       }
       outEl.textContent = lines.join("\n");
@@ -362,6 +440,7 @@
       outEl.textContent = e.message;
     });
 }
+
 
 
     btn.addEventListener("click", loadStandings);
