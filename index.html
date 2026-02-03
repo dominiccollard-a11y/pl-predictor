@@ -421,6 +421,41 @@ function getStandingsTeamId(row){
         if (m.status === "FINISHED") finishedOnly.push(m);
         else remainingOnly.push(m);
       }
+      // Calibrate league-wide home advantage from finished matches (this season)
+      // Compute average home points and away points per match.
+      var homePtsSum = 0;
+      var awayPtsSum = 0;
+      var nFin = 0;
+
+      for (var iHA=0; iHA<finishedOnly.length; iHA++){
+        var mHA = finishedOnly[iHA];
+
+        var hs = (mHA.score && mHA.score.fullTime) ? mHA.score.fullTime.home : null;
+        var as = (mHA.score && mHA.score.fullTime) ? mHA.score.fullTime.away : null;
+        if (typeof hs !== "number" || typeof as !== "number") continue;
+
+        var hpts = 0, apts = 0;
+        if (hs > as) { hpts = 3; apts = 0; }
+        else if (hs < as) { hpts = 0; apts = 3; }
+        else { hpts = 1; apts = 1; }
+
+        homePtsSum += hpts;
+        awayPtsSum += apts;
+        nFin += 1;
+      }
+
+      if (nFin > 0){
+        var homePPG_league = homePtsSum / nFin;
+        var awayPPG_league = awayPtsSum / nFin;
+
+        // Convert league PPG gap into a small additive advantage term.
+        // We dampen it so it doesn't overpower team-specific venue effects.
+        HOME_ADV = (homePPG_league - awayPPG_league) * 0.50;
+
+        // Clamp: keep sane
+        if (HOME_ADV < 0.05) HOME_ADV = 0.05;
+        if (HOME_ADV > 0.25) HOME_ADV = 0.25;
+      }
 
       // Standings rows
       var total = findTotal(latestStandingsPayload);
