@@ -47,6 +47,40 @@
     var out = document.getElementById("out");
 
     statusEl.textContent = "JS loaded. Click “Get live standings”.";
+    function formatStandings(rows){
+  var lines = [];
+  lines.push("#  Team                         MP  Pts  GD");
+  lines.push("------------------------------------------------");
+  for (var i = 0; i < rows.length; i++){
+    var r = rows[i];
+    var name = (r.team && (r.team.name || r.team.shortName || r.team.tla)) || "";
+    var mp = r.playedGames || 0;
+    var pts = r.points || 0;
+    var gd = (typeof r.goalDifference === "number") ? r.goalDifference : 0;
+
+    var teamCol = (name + "                              ").slice(0, 28);
+    var line = (String(i+1) + "  ").slice(0,3) + teamCol +
+      "  " + String(mp).padStart(2, " ") +
+      "  " + String(pts).padStart(3, " ") +
+      "  " + String(gd).padStart(3, " ");
+    lines.push(line);
+  }
+  return lines.join("\n");
+}
+
+function formatProjected(projected){
+  var lines = [];
+  lines.push("#  Team                         Projected Pts");
+  lines.push("------------------------------------------------");
+  for (var i = 0; i < projected.length; i++){
+    var p = projected[i];
+    var teamCol = (p.team + "                              ").slice(0, 28);
+    var line = (String(i+1) + "  ").slice(0,3) + teamCol + "  " + p.projPts.toFixed(1);
+    lines.push(line);
+  }
+  return lines.join("\n");
+}
+
 function formatStandings(rows){
   var lines = [];
   lines.push("#  Team                         MP  Pts  GD");
