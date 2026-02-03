@@ -5,11 +5,96 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>PL Predictor</title>
   <style>
-    body{font-family:system-ui;margin:24px;max-width:900px}
-    select,button{padding:10px;font-size:16px}
-    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-    pre{background:#111;color:#eee;padding:12px;border-radius:8px;overflow:auto;white-space:pre}
-  </style>
+  :root{
+    --bg:#080154;
+    --text:#ffffff;
+    --accent1:#f3cb75;
+    --accent2:#f78012;
+    --panel: rgba(255,255,255,0.06);
+    --panel-border: rgba(243,203,117,0.35);
+  }
+
+  body{
+    font-family:system-ui;
+    margin:24px;
+    max-width:900px;
+    background:var(--bg);
+    color:var(--text);
+  }
+
+  h1{ margin:0 0 16px 0; }
+
+  .row{
+    display:flex;
+    gap:10px;
+    align-items:center;
+    flex-wrap:wrap;
+    padding:12px;
+    border:1px solid var(--panel-border);
+    border-radius:12px;
+    background:var(--panel);
+  }
+
+  label{ color:var(--accent1); font-weight:600; }
+
+  select,button{
+    padding:10px;
+    font-size:16px;
+    border-radius:10px;
+    border:1px solid var(--panel-border);
+    background:rgba(255,255,255,0.08);
+    color:var(--text);
+  }
+
+  select:disabled,
+  button:disabled{
+    opacity:0.55;
+    cursor:not-allowed;
+  }
+
+  button{
+    background:var(--accent2);
+    border-color:transparent;
+    color:var(--bg);
+    font-weight:700;
+  }
+
+  button:hover:not(:disabled){
+    filter:brightness(1.05);
+  }
+
+  #status{
+    margin:14px 0 10px 0;
+    color:var(--accent1);
+  }
+
+  #summary{
+    border:1px solid var(--panel-border);
+    border-radius:12px;
+    padding:12px;
+    background:var(--panel);
+  }
+
+  #summary b{ color:var(--accent1); }
+
+  pre{
+    background:rgba(0,0,0,0.35);
+    color:var(--text);
+    padding:12px;
+    border-radius:12px;
+    overflow:auto;
+    white-space:pre;
+    border:1px solid rgba(247,128,18,0.35);
+  }
+
+  #tableFooter{
+    color:var(--accent1);
+  }
+
+  /* Links (if any) */
+  a{ color:var(--accent1); }
+</style>
+
 </head>
 <body>
   <h1>Premier League Predictor</h1>
