@@ -148,7 +148,8 @@ for (var j=0; j<teams.length; j++){
 teamSel.innerHTML = html;
 teamSel.disabled = false;
 teamSel.value = "";           // default to Select team
-predictBtn.disabled = true;   // disable until a team is chosen
+predictBtn.disabled = !teamSel.value;
+
 
 }
 
