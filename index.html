@@ -38,6 +38,7 @@
     };
 
     var ENDPOINT = "/.netlify/functions/pl-standings";
+var MATCHES_ENDPOINT = "/.netlify/functions/pl-matches";
 
     var teamSel = document.getElementById("team");
     var btn = document.getElementById("btn");
@@ -173,59 +174,147 @@ latestPayload = payload;
 
     // Button click
     btn.addEventListener("click", loadStandings);
+    function buildLast5FormMap(matches){
+  // Returns: { "Arsenal FC": { pts: X, games: Y, ppg: Z } , ... }
+  var map = {};
+
+  function addTeam(teamName, pts){
+    if (!map[teamName]) map[teamName] = { ptsList: [] };
+    map[teamName].ptsList.push(pts);
+  }
+
+  // Only FINISHED matches with full-time scores
+  for (var i = 0; i < matches.length; i++){
+    var m = matches[i];
+    if (!m || m.status !== "FINISHED") continue;
+
+    var home = m.homeTeam && m.homeTeam.name ? m.homeTeam.name : null;
+    var away = m.awayTeam && m.awayTeam.name ? m.awayTeam.name : null;
+    if (!home || !away) continue;
+
+    var hs = m.score && m.score.fullTime ? m.score.fullTime.home : null;
+    var as = m.score && m.score.fullTime ? m.score.fullTime.away : null;
+    if (typeof hs !== "number" || typeof as !== "number") continue;
+
+    // Determine points for this match
+    var homePts = 0, awayPts = 0;
+    if (hs > as) { homePts = 3; awayPts = 0; }
+    else if (hs < as) { homePts = 0; awayPts = 3; }
+    else { homePts = 1; awayPts = 1; }
+
+    addTeam(home, homePts);
+    addTeam(away, awayPts);
+  }
+
+  // Convert to last-5 ppg (use most recent 5: football-data matches are usually chronological; if not, we’ll sort later in a later step)
+  var out = {};
+  for (var team in map){
+    var list = map[team].ptsList;
+    var start = Math.max(0, list.length - 5);
+    var sum = 0;
+    var games = 0;
+    for (var j = start; j < list.length; j++){
+      sum += list[j];
+      games += 1;
+    }
+    out[team] = { pts: sum, games: games, ppg: games ? (sum / games) : 0 };
+  }
+  return out;
+}
+
     predictBtn.addEventListener("click", function(){
-  // Very simple predictor: project current points-per-game to 38 games.
   var selected = teamSel.value;
 
-  // Parse the currently displayed JSON in the black box (we already have it there).
   if (!latestPayload) {
-  statusEl.textContent = "Please load live standings first.";
-  return;
-}
-var payload = latestPayload;
-
-
-  var total = findTotal(payload);
-  var rows = (total && total.table) ? total.table : [];
-  if (!rows.length) {
-    statusEl.textContent = "No standings data available.";
+    statusEl.textContent = "Please load live standings first.";
     return;
   }
 
-  // Build projected points table
-  var projected = [];
-  for (var i = 0; i < rows.length; i++){
-    var r = rows[i];
-    var name = (r.team && (r.team.name || r.team.shortName || r.team.tla)) || "";
-    var played = r.playedGames || 0;
-    var points = r.points || 0;
-    var ppg = played ? (points / played) : 0;
-    var projPts = ppg * 38;
+  statusEl.textContent = "Running predictor (loading matches)…";
+  out.textContent = "Working…";
 
-    projected.push({
-      team: name,
-      projPts: projPts
+  fetch(MATCHES_ENDPOINT + "?status=FINISHED&_=" + Date.now())
+    .then(function(r){
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
+    .then(function(matchPayload){
+      var matches = matchPayload && matchPayload.matches ? matchPayload.matches : [];
+      var formMap = buildLast5FormMap(matches);
+
+      var total = findTotal(latestPayload);
+      var rows = (total && total.table) ? total.table : [];
+      if (!rows.length) {
+        statusEl.textContent = "No standings data available.";
+        return;
+      }
+
+      // Project points with form adjustment
+      // Baseline: current PPG over 38
+      // Form adjustment: compare last5 PPG vs season PPG and nudge projection
+      // Weight is intentionally conservative for v1
+      var projected = [];
+      for (var i = 0; i < rows.length; i++){
+        var rrow = rows[i];
+        var name = (rrow.team && (rrow.team.name || rrow.team.shortName || rrow.team.tla)) || "";
+        var played = rrow.playedGames || 0;
+        var points = rrow.points || 0;
+
+        var seasonPPG = played ? (points / played) : 0;
+        var baseProj = seasonPPG * 38;
+
+        var f = formMap[name];
+        var last5PPG = (f && f.games) ? f.ppg : seasonPPG;
+
+        // Nudge: if last5 is better than season, increase projection a bit, and vice versa
+        var delta = last5PPG - seasonPPG;
+
+        // Weight factor: remaining games * small multiplier
+        var remainingGames = Math.max(0, 38 - played);
+        var formBoost = delta * remainingGames * 0.35; // tune later
+
+        var projPts = baseProj + formBoost;
+
+        projected.push({
+          team: name,
+          projPts: projPts,
+          seasonPPG: seasonPPG,
+          last5PPG: last5PPG
+        });
+      }
+
+      projected.sort(function(a,b){ return b.projPts - a.projPts; });
+
+      var pos = null;
+      for (var j = 0; j < projected.length; j++){
+        if (projected[j].team === selected){ pos = j + 1; break; }
+      }
+
+      statusEl.textContent = "Predicted finish for " + selected + ": " + (pos || "?") + "th";
+
+      // Display a readable projected table (top 20)
+      var lines = [];
+      lines.push("#  Team                         Projected  SeasonPPG  Last5PPG");
+      lines.push("----------------------------------------------------------------");
+      for (var k = 0; k < projected.length; k++){
+        var p = projected[k];
+        var teamCol = (p.team + "                              ").slice(0, 28);
+        var line =
+          (String(k+1) + "  ").slice(0,3) +
+          teamCol +
+          "  " + p.projPts.toFixed(1).padStart(8, " ") +
+          "  " + p.seasonPPG.toFixed(2).padStart(8, " ") +
+          "  " + p.last5PPG.toFixed(2).padStart(7, " ");
+        lines.push(line);
+      }
+      out.textContent = lines.join("\n");
+    })
+    .catch(function(e){
+      statusEl.textContent = "Predictor failed: " + e.message;
+      out.textContent = e.message;
     });
-  }
+});
 
-  // Sort by projected points
-  projected.sort(function(a,b){
-    return b.projPts - a.projPts;
-  });
-
-  // Find selected team's predicted position
-  var pos = null;
-  for (var j = 0; j < projected.length; j++){
-    if (projected[j].team === selected){
-      pos = j + 1;
-      break;
-    }
-  }
-
-  statusEl.textContent = "Predicted finish for " + selected + ": " + (pos || "?") + "th";
-
-  // Show projected table in the black box (top 20)
-  out.textContent = formatProjected(projected);
 
 });
 
