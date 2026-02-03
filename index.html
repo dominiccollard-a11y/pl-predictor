@@ -793,7 +793,11 @@ statusEl.textContent += " | HOME_ADV=" + HOME_ADV.toFixed(3);
         if (projected[j].teamId === selectedId){ pos = j+1; break; }
       }
 
-      statusEl.textContent = "Predicted finish for " + selectedName + ": " + (pos || "?") + "th";
+      statusEl.textContent =
+  "Predicted finish for " + selectedName + ": " + (pos || "?") + "th" +
+  " | HOME_ADV=" + HOME_ADV.toFixed(3) +
+  " | SCALE=" + SIGMOID_SCALE.toFixed(2);
+
 
       var lines = [];
       lines.push("#  Team                         ProjPts  RH RA  HPPG APPG  L5PPG H2HPPG");
