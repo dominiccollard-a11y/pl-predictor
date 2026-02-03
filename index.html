@@ -99,6 +99,14 @@ var SIGMOID_SCALE = 1.25;
       while (str.length < n) str = " " + str;
       return str.slice(-n);
     }
+function ordinal(n){
+  n = Number(n);
+  if (!isFinite(n)) return String(n);
+
+  var s = ["th","st","nd","rd"];
+  var v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
 
     function findTotal(payload){
       var standings = (payload && payload.standings) ? payload.standings : [];
@@ -986,8 +994,8 @@ statusEl.textContent += " | HOME_ADV=" + HOME_ADV.toFixed(3);
       var pRel = relCount / SIMS;
 
       // --- Update summary panel ---
-      curEl.textContent  = (currentPos ? (currentPos + "th") : "?") + " • " + (currentPoints !== null ? currentPoints : "?") + " pts";
-      predEl.textContent = (predPos ? (predPos + "th") : "?") + " • " + (predPts !== null ? predPts.toFixed(1) : "?") + " pts";
+      curEl.textContent  = (currentPos ? (currentPos + "th","st","nd","rd") : "?") + " • " + (currentPoints !== null ? currentPoints : "?") + " pts";
+      predEl.textContent = (predPos ? (predPos + "th","st","nd","rd") : "?") + " • " + (predPts !== null ? predPts.toFixed(1) : "?") + " pts";
 
       pTop4El.textContent = pct(pTop4);
       p56El.textContent   = pct(p56);
@@ -1054,8 +1062,17 @@ statusEl.textContent = "Prediction ready for " + selectedName + " • Last updat
   predictBtn.addEventListener("click", runPredictor);
 
 teamSel.addEventListener("change", function(){
-  predictBtn.disabled = !teamSel.value;
+  var hasSelection = !!teamSel.value;
+  predictBtn.disabled = !hasSelection;
+
+  if (hasSelection){
+    var firstOpt = teamSel.options[0];
+    if (firstOpt && firstOpt.value === ""){
+      teamSel.remove(0);
+    }
+  }
 });
+
 
 btnFull.addEventListener("click", function(){
   if (!lastProjected) return;
