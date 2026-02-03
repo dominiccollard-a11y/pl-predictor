@@ -793,8 +793,9 @@ statusEl.textContent += " | HOME_ADV=" + HOME_ADV.toFixed(3);
         if (projected[j].teamId === selectedId){ pos = j+1; break; }
       }
 
-      statusEl.textContent =
-  "Predicted finish for " + selectedName + ": " + (pos || "?") + "th" +
+     
+  statusEl.textContent = "[DBG] Predicted finish for " + selectedName + ": " + (pos || "?") + "th | HOME_ADV=" + Number(HOME_ADV).toFixed(3) + " | SCALE=" + Number(SIGMOID_SCALE).toFixed(2);
+
   " | HOME_ADV=" + HOME_ADV.toFixed(3) +
   " | SCALE=" + SIGMOID_SCALE.toFixed(2);
 
