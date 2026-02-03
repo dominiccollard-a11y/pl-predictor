@@ -41,6 +41,8 @@
 
     var teamSel = document.getElementById("team");
     var btn = document.getElementById("btn");
+    var predictBtn = document.getElementById("predict");
+
     var statusEl = document.getElementById("status");
     var out = document.getElementById("out");
 
@@ -89,6 +91,8 @@
           out.textContent = JSON.stringify(payload, null, 2);
 
           if (rows.length) renderTeams(rows);
+          predictBtn.disabled = false;
+
         })
         .catch(function(e){
           statusEl.textContent = "Failed to load standings: " + e.message;
@@ -98,6 +102,62 @@
 
     // Button click
     btn.addEventListener("click", loadStandings);
+    predictBtn.addEventListener("click", function(){
+  // Very simple predictor: project current points-per-game to 38 games.
+  var selected = teamSel.value;
+
+  // Parse the currently displayed JSON in the black box (we already have it there).
+  var payload = null;
+  try {
+    payload = JSON.parse(out.textContent);
+  } catch (e) {
+    statusEl.textContent = "Please load live standings first.";
+    return;
+  }
+
+  var total = findTotal(payload);
+  var rows = (total && total.table) ? total.table : [];
+  if (!rows.length) {
+    statusEl.textContent = "No standings data available.";
+    return;
+  }
+
+  // Build projected points table
+  var projected = [];
+  for (var i = 0; i < rows.length; i++){
+    var r = rows[i];
+    var name = (r.team && (r.team.name || r.team.shortName || r.team.tla)) || "";
+    var played = r.playedGames || 0;
+    var points = r.points || 0;
+    var ppg = played ? (points / played) : 0;
+    var projPts = ppg * 38;
+
+    projected.push({
+      team: name,
+      projPts: projPts
+    });
+  }
+
+  // Sort by projected points
+  projected.sort(function(a,b){
+    return b.projPts - a.projPts;
+  });
+
+  // Find selected team's predicted position
+  var pos = null;
+  for (var j = 0; j < projected.length; j++){
+    if (projected[j].team === selected){
+      pos = j + 1;
+      break;
+    }
+  }
+
+  statusEl.textContent = "Predicted finish for " + selected + ": " + (pos || "?") + "th";
+
+  // Show projected table in the black box (top 20)
+  out.textContent = JSON.stringify(projected, null, 2);
+});
+
   </script>
 </body>
 </html>
