@@ -333,16 +333,23 @@ function buildH2HPPGForRemaining(finishedMatches, remainingMatches){
 
 function expectedPoints(homeTeam, awayTeam, homeEff, awayEff){
   // Convert rating difference into expected points for the fixture.
-  // Keep it simple + stable:
-  // - Fixed draw probability
-  // - Win probability from sigmoid of rating diff
-  var drawP = 0.28;
-  var diff = homeEff - awayEff;
+  // Improvements:
+  // - Draw probability depends on mismatch (close teams draw more).
+  // - Win probability still from sigmoid(diff).
 
-  // scale diff into probability; tweakable
+  var diff = homeEff - awayEff;
+  var absDiff = Math.abs(diff);
+
+  // Dynamic draw probability:
+  // around 0.30 for close teams, trending down to ~0.15 for big mismatches
+  // (numbers are tunable, but these are reasonable starting values)
+  var drawP = 0.30 - 0.12 * sigmoid((absDiff - 0.35) * 6);
+  if (drawP < 0.12) drawP = 0.12;
+  if (drawP > 0.32) drawP = 0.32;
+
+  // Win probability (home win given non-draw)
   var winP = sigmoid(diff * 1.25);
 
-  // remaining probability split between win/loss
   var nonDraw = 1 - drawP;
 
   var homeExp = (drawP * 1) + (nonDraw * winP * 3);
@@ -350,6 +357,7 @@ function expectedPoints(homeTeam, awayTeam, homeEff, awayEff){
 
   return { homeExp: homeExp, awayExp: awayExp, winP: winP, drawP: drawP };
 }
+
 
     function runPredictor(){
   if (!latestStandingsPayload){
