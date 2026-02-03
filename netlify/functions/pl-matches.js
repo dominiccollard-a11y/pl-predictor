@@ -13,9 +13,7 @@ exports.handler = async (event) => {
   // Season 2025 = 2025/26 in football-data.org
   const season = "2025";
 
-  // You can override status by calling:
-  // /.netlify/functions/pl-matches?status=FINISHED
- const status = (event.queryStringParameters && event.queryStringParameters.status) || "ALL";
+ 
 
 
   // status is OPTIONAL. If not provided, we DO NOT include it.
