@@ -48,7 +48,7 @@
     var latestStandingsPayload = null;
     var teamIdToName = {};
 var teamIdToShort = {};
-
+var SIGMOID_SCALE = 1.25;
 
     statusEl.textContent = "JS loaded. Click “Get live standings”.";
 
@@ -366,7 +366,8 @@ var diff = (homeEff + HOME_ADV) - awayEff;
   if (drawP > 0.32) drawP = 0.32;
 
   // Win probability (home win given non-draw)
-  var winP = sigmoid(diff * 1.25);
+  var winP = sigmoid(diff * SIGMOID_SCALE);
+
 
   var nonDraw = 1 - drawP;
 
@@ -444,6 +445,35 @@ function getStandingsTeamId(row){
         currentPts[tid] = pts;
         played[tid] = pg;
       }
+            // Self-calibrate sigmoid scale based on spread of team strengths this season
+      var vals = [];
+      for (var tidS in seasonPPG){
+        vals.push(seasonPPG[tidS]);
+      }
+
+      // Compute standard deviation (simple)
+      var mean = 0;
+      for (var iM=0; iM<vals.length; iM++) mean += vals[iM];
+      mean = vals.length ? (mean / vals.length) : 0;
+
+      var v = 0;
+      for (var iV=0; iV<vals.length; iV++){
+        var d = vals[iV] - mean;
+        v += d * d;
+      }
+      var stdev = vals.length ? Math.sqrt(v / vals.length) : 0;
+
+      // If league is very tight (small stdev), scale up sensitivity a bit.
+      // If league is very spread out, scale down.
+      // Clamp to keep sane.
+      if (stdev > 0.0001){
+        SIGMOID_SCALE = 1.25 / stdev;
+      } else {
+        SIGMOID_SCALE = 1.25;
+      }
+      if (SIGMOID_SCALE < 0.8) SIGMOID_SCALE = 0.8;
+      if (SIGMOID_SCALE > 3.0) SIGMOID_SCALE = 3.0;
+
 
       // --- FORM MAP (last 5) using IDs ---
       // Build: teamId -> [{t, pts}]
