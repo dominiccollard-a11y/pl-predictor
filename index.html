@@ -456,7 +456,8 @@ function getStandingsTeamId(row){
         if (HOME_ADV < 0.05) HOME_ADV = 0.05;
         if (HOME_ADV > 0.25) HOME_ADV = 0.25;
       }
-
+// DEBUG (temporary)
+statusEl.textContent += " | HOME_ADV=" + HOME_ADV.toFixed(3);
       // Standings rows
       var total = findTotal(latestStandingsPayload);
       var rows = (total && total.table) ? total.table : [];
