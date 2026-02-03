@@ -355,8 +355,10 @@ function expectedPoints(homeTeam, awayTeam, homeEff, awayEff){
   // - Draw probability depends on mismatch (close teams draw more).
   // - Win probability still from sigmoid(diff).
 
-  var diff = (homeEff + HOME_ADV) - awayEff;
-var absDiff = Math.abs(diff);
+  var mismatch = homeEff - awayEff;               // for draw rate (no home adv)
+var diff = (homeEff + HOME_ADV) - awayEff;      // for win/loss (with home adv)
+var absDiff = Math.abs(mismatch);
+
 
 
   // Dynamic draw probability:
