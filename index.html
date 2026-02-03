@@ -17,14 +17,33 @@
   <div class="row">
     <label for="team">Team:</label>
     <select id="team" disabled>
-      <option>Load standings first…</option>
-    </select>
+  <option value="">Select team</option>
+</select>
+
     <button id="predict" disabled>Run predictor</button>
 
   </div>
 
-  <p id="status">Waiting…</p>
-  <pre id="out">No data yet.</pre>
+ <p id="status">Waiting…</p>
+
+<div id="summary" style="display:none; margin:16px 0;">
+  <div style="display:grid; gap:10px;">
+    <div><b>Current position & points:</b> <span id="cur"></span></div>
+    <div><b>Predicted position & points:</b> <span id="pred"></span></div>
+    <div><b>Probability of top 4 finish:</b> <span id="pTop4"></span></div>
+    <div><b>Probability of 5th–6th:</b> <span id="p56"></span></div>
+    <div><b>Probability of 7th:</b> <span id="p7"></span></div>
+    <div><b>Probability of relegation:</b> <span id="pRel"></span></div>
+  </div>
+
+  <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap;">
+    <button id="btnFull" type="button">Full league table</button>
+    <button id="btnMath" type="button">See the maths</button>
+  </div>
+</div>
+
+<pre id="out">No data yet.</pre>
+
 
   <script>
     // Show runtime errors on the page (syntax errors won't reach here)
@@ -44,6 +63,20 @@
     var predictBtn= document.getElementById("predict");
     var statusEl  = document.getElementById("status");
     var outEl     = document.getElementById("out");
+var summaryEl = document.getElementById("summary");
+var curEl     = document.getElementById("cur");
+var predEl    = document.getElementById("pred");
+var pTop4El   = document.getElementById("pTop4");
+var p56El     = document.getElementById("p56");
+var p7El      = document.getElementById("p7");
+var pRelEl    = document.getElementById("pRel");
+
+var btnFull   = document.getElementById("btnFull");
+var btnMath   = document.getElementById("btnMath");
+
+// store latest prediction outputs for the buttons
+var lastProjected = null;
+var lastMathText  = "";
 
     var latestStandingsPayload = null;
     var lastUpdatedText = "";
@@ -95,13 +128,15 @@ var SIGMOID_SCALE = 1.25;
 
   teams.sort(function(a,b){ return a.name.localeCompare(b.name); });
 
-  var html = "";
-  for (var j=0; j<teams.length; j++){
-    html += "<option value=\"" + teams[j].id + "\">" + teams[j].name + "</option>";
-  }
+  var html = "<option value=\"\">Select team</option>";
+for (var j=0; j<teams.length; j++){
+  html += "<option value=\"" + teams[j].id + "\">" + teams[j].name + "</option>";
+}
+teamSel.innerHTML = html;
+teamSel.disabled = false;
+teamSel.value = "";           // default to Select team
+predictBtn.disabled = true;   // disable until a team is chosen
 
-  teamSel.innerHTML = html;
-  teamSel.disabled = false;
 }
 
 
@@ -197,6 +232,20 @@ var SIGMOID_SCALE = 1.25;
       }
       return lines.join("\n");
     }
+function pct(x){
+  var v = Math.max(0, Math.min(1, x));
+  return (v * 100).toFixed(1) + "%";
+}
+
+function showSummary(){
+  summaryEl.style.display = "block";
+  outEl.style.display = "none";
+}
+
+function showTable(text){
+  outEl.textContent = text;
+  outEl.style.display = "block";
+}
 
     function loadStandings(){
       statusEl.textContent = "Loading live standings…";
@@ -217,6 +266,8 @@ lastUpdatedText = new Date().toLocaleString();
           statusEl.textContent = "Current league table • Last updated: " + lastUpdatedText;
 
           outEl.textContent = formatStandings(rows);
+summaryEl.style.display = "none";
+outEl.style.display = "block";
 
           if (rows.length) renderTeams(rows);
           predictBtn.disabled = false;
@@ -395,6 +446,18 @@ function getStandingsTeamId(row){
   if (!row || !row.team) return null;
   if (typeof row.team.id === "number") return String(row.team.id);
   return null;
+}
+function formatSimpleProjected(projected){
+  var lines = [];
+  lines.push("#  Team                         Pts");
+  lines.push("-------------------------------------");
+  for (var i=0; i<projected.length; i++){
+    var p = projected[i];
+    var line = padLeft(i+1, 2) + "  " + padRight(p.team, 28) +
+      "  " + padLeft(p.projPts.toFixed(1), 6);
+    lines.push(line);
+  }
+  return lines.join("\n");
 }
 
     function runPredictor(){
@@ -816,6 +879,127 @@ statusEl.textContent += " | HOME_ADV=" + HOME_ADV.toFixed(3);
 
 
       projected.sort(function(a,b){ return b.projPts - a.projPts; });
+      // --- Current position & points ---
+      var currentPos = null;
+      var currentPoints = null;
+      for (var rr=0; rr<rows.length; rr++){
+        var tidR = getStandingsTeamId(rows[rr]);
+        if (tidR === selectedId){
+          currentPos = rows[rr].position || (rr+1);
+          currentPoints = rows[rr].points || 0;
+          break;
+        }
+      }
+
+      // --- Predicted position & points (deterministic expected points) ---
+      var predPos = null;
+      var predPts = null;
+      for (var j=0; j<projected.length; j++){
+        if (projected[j].teamId === selectedId){
+          predPos = j+1;
+          predPts = projected[j].projPts;
+          break;
+        }
+      }
+
+      // --- Monte Carlo simulation for finish probabilities ---
+      // Uses per-fixture probabilities (win/draw/lose) from expectedPoints().
+      var SIMS = 1500; // increase later if you want (slower if too high)
+
+      // Starting points map (integers)
+      var startPts = {};
+      for (var tidX in currentPts) startPts[tidX] = currentPts[tidX];
+
+      // Use current goal difference as a tie-break proxy (from standings)
+      var gdMap = {};
+      for (var g=0; g<rows.length; g++){
+        var tidG = getStandingsTeamId(rows[g]);
+        gdMap[tidG] = (typeof rows[g].goalDifference === "number") ? rows[g].goalDifference : 0;
+      }
+
+      var top4Count = 0;
+      var p56Count = 0;
+      var p7Count = 0;
+      var relCount = 0;
+
+      function rankTeams(pointsMap){
+        var arr = [];
+        for (var tid in pointsMap){
+          arr.push({ tid: tid, pts: pointsMap[tid], gd: gdMap[tid] || 0, r: Math.random() * 0.0001 });
+        }
+        arr.sort(function(a,b){
+          if (b.pts !== a.pts) return b.pts - a.pts;
+          if (b.gd !== a.gd) return b.gd - a.gd;
+          return b.r - a.r;
+        });
+        return arr;
+      }
+
+      for (var s=0; s<SIMS; s++){
+        // copy starting points
+        var simPts = {};
+        for (var tidS in startPts) simPts[tidS] = startPts[tidS];
+
+        for (var q=0; q<remainingOnly.length; q++){
+          var fx = remainingOnly[q];
+          var hidF = getMatchTeamId(fx.homeTeam);
+          var aidF = getMatchTeamId(fx.awayTeam);
+          if (!hidF || !aidF) continue;
+
+          var homeEff = effHome(hidF);
+          var awayEff = effAway(aidF);
+
+          var exp = expectedPoints(hidF, aidF, homeEff, awayEff);
+
+          var drawP = exp.drawP;
+          var homeWinP = (1 - drawP) * exp.winP;
+          var awayWinP = (1 - drawP) * (1 - exp.winP);
+
+          var u = Math.random();
+          if (u < homeWinP){
+            simPts[hidF] += 3;
+          } else if (u < homeWinP + drawP){
+            simPts[hidF] += 1;
+            simPts[aidF] += 1;
+          } else {
+            simPts[aidF] += 3;
+          }
+        }
+
+        var ranked = rankTeams(simPts);
+        var posSel = null;
+        for (var k=0; k<ranked.length; k++){
+          if (ranked[k].tid === selectedId){ posSel = k+1; break; }
+        }
+
+        if (posSel !== null){
+          if (posSel <= 4) top4Count++;
+          if (posSel === 5 || posSel === 6) p56Count++;
+          if (posSel === 7) p7Count++;
+          if (posSel >= 18) relCount++;
+        }
+      }
+
+      var pTop4 = top4Count / SIMS;
+      var p56 = p56Count / SIMS;
+      var p7 = p7Count / SIMS;
+      var pRel = relCount / SIMS;
+
+      // --- Update summary panel ---
+      curEl.textContent  = (currentPos ? (currentPos + "th") : "?") + " • " + (currentPoints !== null ? currentPoints : "?") + " pts";
+      predEl.textContent = (predPos ? (predPos + "th") : "?") + " • " + (predPts !== null ? predPts.toFixed(1) : "?") + " pts";
+
+      pTop4El.textContent = pct(pTop4);
+      p56El.textContent   = pct(p56);
+      p7El.textContent    = pct(p7);
+      pRelEl.textContent  = pct(pRel);
+
+      // Store tables for the buttons
+      lastProjected = projected;
+
+      // Build the aligned "maths" table text (your existing one) and store it
+      // IMPORTANT: we show it only when the user clicks the button.
+      // You already generate `lines.join("\n")` later — we’ll reuse that.
 
             var pos = null;
       for (var j = 0; j < projected.length; j++){
@@ -851,7 +1035,10 @@ statusEl.textContent += " | HOME_ADV=" + HOME_ADV.toFixed(3);
 
         lines.push(line);
       }
-      outEl.textContent = lines.join("\n");
+      lastMathText = lines.join("\n");
+showSummary();
+statusEl.textContent = "Prediction ready for " + selectedName + " • Last updated: " + new Date().toLocaleString();
+
 
     })
     .catch(function(e){
@@ -864,7 +1051,22 @@ statusEl.textContent += " | HOME_ADV=" + HOME_ADV.toFixed(3);
 
 
 
-    predictBtn.addEventListener("click", runPredictor);
+  predictBtn.addEventListener("click", runPredictor);
+
+teamSel.addEventListener("change", function(){
+  predictBtn.disabled = !teamSel.value;
+});
+
+btnFull.addEventListener("click", function(){
+  if (!lastProjected) return;
+  showTable(formatSimpleProjected(lastProjected));
+});
+
+btnMath.addEventListener("click", function(){
+  if (!lastMathText) return;
+  showTable(lastMathText);
+});
+
 
 // Default view: load live standings immediately
 loadStandings();
