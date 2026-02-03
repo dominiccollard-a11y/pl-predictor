@@ -410,61 +410,99 @@ function expectedPoints(homeTeam, awayTeam, homeEff, awayEff){
       // #3 H2HPPG vs remaining opponents – smallest priority
       var h2hMap = buildH2HPPGForRemaining(finishedOnly, remainingOnly);
 
-      // Weights (priority order enforced)
-      var FORM_W = 0.45;   // strongest
-      var VENUE_W = 0.35;  // second
-      var H2H_W  = 0.12;   // smallest
+            // Weights (after shrinkage, these can be smaller and more stable)
+      var FORM_W = 0.28;
+      var VENUE_W = 0.25;
+      var H2H_W  = 0.05;
+
+      // Shrinkage strengths (games of "prior")
+      var K_VENUE = 8; // home/away shrinkage strength
+      var K_FORM  = 4; // last-5 shrinkage strength
+      var K_H2H   = 6; // h2h shrinkage strength
+
+      function shrink(ppgObserved, gamesObserved, priorPPG, k){
+        // (obsPts + k*prior) / (obsGames + k)
+        if (ppgObserved === null || typeof ppgObserved !== "number") return priorPPG;
+        var obsGames = gamesObserved || 0;
+        return ((ppgObserved * obsGames) + (priorPPG * k)) / (obsGames + k);
+      }
+
 
       // For each team, compute an "effective strength" at home/away:
       // base seasonPPG + form adjustment + venue adjustment + small h2h adjustment
-      function effHome(team){
+            function effHome(team){
         var base = seasonPPG[team] || 0;
 
+        // FORM (use last5, but shrink toward base)
         var f = formMap[team];
         var l5 = (f && f.games) ? f.ppg : base;
-        var formAdj = (l5 - base) * FORM_W;
+        var l5s = shrink(l5, (f && f.games) ? f.games : 0, base, K_FORM);
+        var formAdj = (l5s - base) * FORM_W;
 
-        var h = ppgFromAgg(homeAgg, team);
-        if (h === null) h = base;
+        // VENUE (home ppg, shrink toward base)
+        var hObs = ppgFromAgg(homeAgg, team);
+        var hGames = (homeAgg[team] && homeAgg[team].games) ? homeAgg[team].games : 0;
+        var h = shrink(hObs, hGames, base, K_VENUE);
         var venueAdj = (h - base) * VENUE_W;
 
-        var h2h = (typeof h2hMap[team] === "number") ? h2hMap[team] : base;
+        // H2H (shrink toward base)
+        var h2hRaw = (typeof h2hMap[team] === "number") ? h2hMap[team] : base;
+        var h2h = shrink(h2hRaw, 6, base, K_H2H); // treat as ~6 games prior-ish
         var h2hAdj = (h2h - base) * H2H_W;
 
         return base + formAdj + venueAdj + h2hAdj;
       }
 
-      function effAway(team){
+
+            function effAway(team){
         var base = seasonPPG[team] || 0;
 
         var f = formMap[team];
         var l5 = (f && f.games) ? f.ppg : base;
-        var formAdj = (l5 - base) * FORM_W;
+        var l5s = shrink(l5, (f && f.games) ? f.games : 0, base, K_FORM);
+        var formAdj = (l5s - base) * FORM_W;
 
-        var a = ppgFromAgg(awayAgg, team);
-        if (a === null) a = base;
+        var aObs = ppgFromAgg(awayAgg, team);
+        var aGames = (awayAgg[team] && awayAgg[team].games) ? awayAgg[team].games : 0;
+        var a = shrink(aObs, aGames, base, K_VENUE);
         var venueAdj = (a - base) * VENUE_W;
 
-        var h2h = (typeof h2hMap[team] === "number") ? h2hMap[team] : base;
+        var h2hRaw = (typeof h2hMap[team] === "number") ? h2hMap[team] : base;
+        var h2h = shrink(h2hRaw, 6, base, K_H2H);
         var h2hAdj = (h2h - base) * H2H_W;
 
         return base + formAdj + venueAdj + h2hAdj;
       }
 
-      // Remaining fixtures count (for display)
-      var remainHome = {}, remainAway = {};
-      function inc(map, team){
+
+            // Remaining home/away counts using PL structure:
+      // each team plays 19 home + 19 away.
+      var homePlayed = {};
+      var awayPlayed = {};
+
+      function incPlayed(map, team){
         if (!map[team]) map[team] = 0;
         map[team] += 1;
       }
-      for (var z=0; z<remainingOnly.length; z++){
-        var rm = remainingOnly[z];
-        var hT = (rm.homeTeam && rm.homeTeam.name) ? rm.homeTeam.name : null;
-        var aT = (rm.awayTeam && rm.awayTeam.name) ? rm.awayTeam.name : null;
+
+      for (var z=0; z<finishedOnly.length; z++){
+        var fm = finishedOnly[z];
+        var hT = (fm.homeTeam && fm.homeTeam.name) ? fm.homeTeam.name : null;
+        var aT = (fm.awayTeam && fm.awayTeam.name) ? fm.awayTeam.name : null;
         if (!hT || !aT) continue;
-        inc(remainHome, hT);
-        inc(remainAway, aT);
+        incPlayed(homePlayed, hT);
+        incPlayed(awayPlayed, aT);
       }
+
+      var remainHome = {};
+      var remainAway = {};
+      for (var teamName2 in seasonPPG){
+        var hp = homePlayed[teamName2] || 0;
+        var ap = awayPlayed[teamName2] || 0;
+        remainHome[teamName2] = Math.max(0, 19 - hp);
+        remainAway[teamName2] = Math.max(0, 19 - ap);
+      }
+
 
       // Fixture-by-fixture expected points (your option D)
       // Start from current points then add expected points for each remaining match.
