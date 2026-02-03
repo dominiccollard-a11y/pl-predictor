@@ -110,7 +110,32 @@
     font-size: 12px;
     opacity: 0.95;
   }
-</style>
+/* Make controls behave nicely on small screens */
+select, button{
+  width:auto;
+}
+
+@media (max-width: 520px){
+  body{ margin:16px; }
+
+  .row{
+    align-items:stretch;
+  }
+
+  label{
+    width:100%;
+  }
+
+  select, button{
+    width:100%;
+  }
+
+  pre{
+    font-size:13px;
+  }
+}
+
+ </style>
 
 
 </head>
