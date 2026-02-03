@@ -8,18 +8,19 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 
-  <style>
+ <style>
   :root{
     --bg:#080154;
     --text:#ffffff;
-    --accent1:#f3cb75;
-    --accent2:#f78012;
+    --accent1:#f3cb75;  /* gold */
+    --accent2:#f78012;  /* orange (optional accents) */
     --panel: rgba(255,255,255,0.06);
     --panel-border: rgba(243,203,117,0.35);
+    --muted: rgba(255,255,255,0.85);
   }
 
-  body{ font-family:"Open Sans", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
-
+  body{
+    font-family:"Open Sans", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
     margin:24px;
     max-width:900px;
     background:var(--bg);
@@ -39,14 +40,36 @@
     background:var(--panel);
   }
 
-  label{ color:var(--accent1); font-weight:600; }
+  label{
+    color:var(--accent1);
+    font-weight:600;
+  }
 
-  select,button{
-  background: var(--accent1);   /* #f3cb75 */
-  border-color: transparent;
-  color: var(--text);           /* white */
-  font-weight: 700;
-}
+  /* Inputs keep a subtle dark panel look for readability */
+  select{
+    padding:10px;
+    font-size:16px;
+    border-radius:10px;
+    border:1px solid var(--panel-border);
+    background:rgba(255,255,255,0.08);
+    color:var(--text);
+  }
+
+  /* Buttons: gold background, high-contrast text (recommended) */
+  button{
+    padding:10px 14px;
+    font-size:16px;
+    border-radius:10px;
+    border:1px solid transparent;
+    background:var(--accent1);   /* #f3cb75 */
+    color:var(--bg);            /* recommended for contrast */
+    font-weight:700;
+    cursor:pointer;
+  }
+
+  button:hover:not(:disabled){
+    filter:brightness(1.05);
+  }
 
   select:disabled,
   button:disabled{
@@ -54,23 +77,12 @@
     cursor:not-allowed;
   }
 
-  button{
-    background:var(--accent2);
-    border-color:transparent;
-    color:var(--bg);
-    font-weight:700;
-  }
-
-  button:hover:not(:disabled){
-    filter:brightness(1.05);
-  }
-
   #status{
-  margin:14px 0 10px 0;
-  color: var(--text);
-  font-style: italic;
-  font-size: 13px;
-}
+    margin:14px 0 10px 0;
+    color:var(--text);
+    font-style: italic;
+    font-size: 13px;
+  }
 
   #summary{
     border:1px solid var(--panel-border);
@@ -88,16 +100,18 @@
     border-radius:12px;
     overflow:auto;
     white-space:pre;
-    border:1px solid rgba(247,128,18,0.35);
+    border:1px solid rgba(243,203,117,0.35);
   }
 
   #tableFooter{
-  color: var(--text);
-  font-style: italic;
-  font-size: 12px;
-  opacity: 0.95;
-}
+    margin-top:12px;
+    color:var(--text);
+    font-style: italic;
+    font-size: 12px;
+    opacity: 0.95;
+  }
 </style>
+
 
 </head>
 <body>
