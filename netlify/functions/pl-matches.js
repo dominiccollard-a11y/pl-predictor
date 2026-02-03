@@ -15,7 +15,8 @@ exports.handler = async (event) => {
 
   // You can override status by calling:
   // /.netlify/functions/pl-matches?status=FINISHED
-  const status = (event.queryStringParameters && event.queryStringParameters.status) || "FINISHED";
+ const status = (event.queryStringParameters && event.queryStringParameters.status) || "ALL";
+
 
   const url =
     "https://api.football-data.org/v4/competitions/PL/matches" +
