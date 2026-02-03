@@ -106,52 +106,62 @@
     }
 
     function buildLast5FormMap(matches){
-      // We collect results per team, then take the last 5.
-      // NOTE: This assumes the API returns matches in chronological order.
-      // If we later find it's not, we'll sort by match.utcDate.
-      var map = {};
+  // Returns: team -> { games: N, ppg: X }
+  // Correctly sorts by utcDate so "last 5" is truly the last 5.
 
-      function addPts(teamName, pts){
-        if (!map[teamName]) map[teamName] = [];
-        map[teamName].push(pts);
-      }
+  var map = {}; // team -> [{t, pts}, ...]
 
-      for (var i=0; i<matches.length; i++){
-        var m = matches[i];
-        if (!m || m.status !== "FINISHED") continue;
+  function addPts(teamName, t, pts){
+    if (!map[teamName]) map[teamName] = [];
+    map[teamName].push({ t: t, pts: pts });
+  }
 
-        var home = (m.homeTeam && m.homeTeam.name) ? m.homeTeam.name : null;
-        var away = (m.awayTeam && m.awayTeam.name) ? m.awayTeam.name : null;
-        if (!home || !away) continue;
+  function ts(utc){
+    var d = utc ? Date.parse(utc) : 0;
+    return isNaN(d) ? 0 : d;
+  }
 
-        var hs = (m.score && m.score.fullTime) ? m.score.fullTime.home : null;
-        var as = (m.score && m.score.fullTime) ? m.score.fullTime.away : null;
-        if (typeof hs !== "number" || typeof as !== "number") continue;
+  for (var i=0; i<matches.length; i++){
+    var m = matches[i];
+    if (!m || m.status !== "FINISHED") continue;
 
-        var homePts = 0, awayPts = 0;
-        if (hs > as) { homePts = 3; awayPts = 0; }
-        else if (hs < as) { homePts = 0; awayPts = 3; }
-        else { homePts = 1; awayPts = 1; }
+    var home = (m.homeTeam && m.homeTeam.name) ? m.homeTeam.name : null;
+    var away = (m.awayTeam && m.awayTeam.name) ? m.awayTeam.name : null;
+    if (!home || !away) continue;
 
-        addPts(home, homePts);
-        addPts(away, awayPts);
-      }
+    var hs = (m.score && m.score.fullTime) ? m.score.fullTime.home : null;
+    var as = (m.score && m.score.fullTime) ? m.score.fullTime.away : null;
+    if (typeof hs !== "number" || typeof as !== "number") continue;
 
-      // Convert to last-5 PPG
-      var out = {};
-      for (var team in map){
-        var list = map[team];
-        var start = Math.max(0, list.length - 5);
-        var sum = 0;
-        var games = 0;
-        for (var j=start; j<list.length; j++){
-          sum += list[j];
-          games += 1;
-        }
-        out[team] = { games: games, ppg: games ? (sum / games) : 0 };
-      }
-      return out;
+    var homePts = 0, awayPts = 0;
+    if (hs > as) { homePts = 3; awayPts = 0; }
+    else if (hs < as) { homePts = 0; awayPts = 3; }
+    else { homePts = 1; awayPts = 1; }
+
+    var tstamp = ts(m.utcDate);
+    addPts(home, tstamp, homePts);
+    addPts(away, tstamp, awayPts);
+  }
+
+  var out = {};
+  for (var team in map){
+    var list = map[team];
+
+    list.sort(function(a,b){ return a.t - b.t; });
+
+    var start = Math.max(0, list.length - 5);
+    var sum = 0;
+    var games = 0;
+    for (var j=start; j<list.length; j++){
+      sum += list[j].pts;
+      games += 1;
     }
+    out[team] = { games: games, ppg: games ? (sum / games) : 0 };
+  }
+
+  return out;
+}
+
 
     function formatProjected(projected){
       var lines = [];
