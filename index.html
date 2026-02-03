@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PL Predictor</title>
+  <style>
+    body{font-family:system-ui;margin:24px;max-width:900px}
+    select,button{padding:10px;font-size:16px}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    pre{background:#111;color:#eee;padding:12px;border-radius:8px;overflow:auto}
+  </style>
+</head>
+<body>
+  <h1>Premier League Predictor</h1>
+
+  <div class="row">
+    <label for="team">Team:</label>
+    <select id="team" disabled>
+      <option>Loading teams…</option>
+    </select>
+    <button id="btn" disabled>Get live standings</button>
+  </div>
+
+  <p id="status">Waiting…</p>
+  <pre id="out">No data yet.</pre>
+
+  <script>
+    const ENDPOINT = "/.netlify/functions/pl-standings";
+
+    const teamSel = document.getElementById("team");
+    const btn = document.getElementById("btn");
+    const statusEl = document.getElementById("status");
+    const out = document.getElementById("out");
+
+    function findTotal(payload){
+      const standings = (payload && payload.standings) ? payload.standings : [];
+      return standings.find(s => s && s.type === "TOTAL");
+    }
+
+    function renderTeams(rows){
+      const teams = rows.map(r => (r.team && (r.team.name || r.team.shortName || r.team.tla)) || "").filter(Boolean);
+      teams.sort((a,b)=>a.localeCompare(b));
+
+      teamSel.innerHTML = teams.map(t => `<option>${t}</option>`).join("");
+      teamSel.disabled = false;
+    }
+
+    async function load(){
+      statusEl.textContent = "Loading live standings…";
+      out.textContent = "";
+
+      try{
+        const r = await fetch(ENDPOINT + "?_=" + Date.now());
+        if(!r.ok) throw new Error("HTTP " + r.status);
+        const payload = await r.json();
+
+        const total = findTotal(payload);
+        const rows = (total && total.table) ? total.table : [];
+
+        statusEl.textContent = `Loaded ${rows.length} teams. Select a team.`;
