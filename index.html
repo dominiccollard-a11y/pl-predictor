@@ -49,6 +49,8 @@
     var teamIdToName = {};
 var teamIdToShort = {};
 var SIGMOID_SCALE = 1.25;
+    var HOME_ADV = 0.14; // default; will be recalculated each run
+
 
     statusEl.textContent = "JS loaded. Click “Get live standings”.";
 
@@ -353,10 +355,9 @@ function expectedPoints(homeTeam, awayTeam, homeEff, awayEff){
   // - Draw probability depends on mismatch (close teams draw more).
   // - Win probability still from sigmoid(diff).
 
-  var HOME_ADV = 0.14; // league-wide home advantage (PPG-ish). Tune later.
-var diff = (homeEff + HOME_ADV) - awayEff;
+  var diff = (homeEff + HOME_ADV) - awayEff;
+var absDiff = Math.abs(diff);
 
-  var absDiff = Math.abs(diff);
 
   // Dynamic draw probability:
   // around 0.30 for close teams, trending down to ~0.15 for big mismatches
