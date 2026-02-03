@@ -47,6 +47,40 @@
     var out = document.getElementById("out");
 
     statusEl.textContent = "JS loaded. Click “Get live standings”.";
+function formatStandings(rows){
+  var lines = [];
+  lines.push("#  Team                         MP  Pts  GD");
+  lines.push("------------------------------------------------");
+  for (var i = 0; i < rows.length; i++){
+    var r = rows[i];
+    var name = (r.team && (r.team.name || r.team.shortName || r.team.tla)) || "";
+    var mp = r.playedGames || 0;
+    var pts = r.points || 0;
+    var gd = (typeof r.goalDifference === "number") ? r.goalDifference : 0;
+
+    // pad team name a bit for readability
+    var teamCol = (name + "                              ").slice(0, 28);
+    var line = (String(i+1) + "  ").slice(0,3) + teamCol +
+      "  " + String(mp).padStart(2, " ") +
+      "  " + String(pts).padStart(3, " ") +
+      "  " + String(gd).padStart(3, " ");
+    lines.push(line);
+  }
+  return lines.join("\n");
+}
+
+function formatProjected(projected){
+  var lines = [];
+  lines.push("#  Team                         Projected Pts");
+  lines.push("------------------------------------------------");
+  for (var i = 0; i < projected.length; i++){
+    var p = projected[i];
+    var teamCol = (p.team + "                              ").slice(0, 28);
+    var line = (String(i+1) + "  ").slice(0,3) + teamCol + "  " + p.projPts.toFixed(1);
+    lines.push(line);
+  }
+  return lines.join("\n");
+}
 
     function findTotal(payload){
       var standings = (payload && payload.standings) ? payload.standings : [];
@@ -88,7 +122,8 @@
           var rows = (total && total.table) ? total.table : [];
 
           statusEl.textContent = "Loaded " + rows.length + " teams.";
-          out.textContent = JSON.stringify(payload, null, 2);
+          out.textContent = formatStandings(rows);
+
 
           if (rows.length) renderTeams(rows);
           predictBtn.disabled = false;
@@ -155,7 +190,8 @@
   statusEl.textContent = "Predicted finish for " + selected + ": " + (pos || "?") + "th";
 
   // Show projected table in the black box (top 20)
-  out.textContent = JSON.stringify(projected, null, 2);
+  out.textContent = formatProjected(projected);
+
 });
 
   </script>
