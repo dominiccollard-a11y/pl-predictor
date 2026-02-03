@@ -353,7 +353,9 @@ function expectedPoints(homeTeam, awayTeam, homeEff, awayEff){
   // - Draw probability depends on mismatch (close teams draw more).
   // - Win probability still from sigmoid(diff).
 
-  var diff = homeEff - awayEff;
+  var HOME_ADV = 0.14; // league-wide home advantage (PPG-ish). Tune later.
+var diff = (homeEff + HOME_ADV) - awayEff;
+
   var absDiff = Math.abs(diff);
 
   // Dynamic draw probability:
