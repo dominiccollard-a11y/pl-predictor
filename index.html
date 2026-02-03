@@ -758,7 +758,7 @@ statusEl.textContent += " | HOME_ADV=" + HOME_ADV.toFixed(3);
         projPtsMap[aidF] = (projPtsMap[aidF] || 0) + exp.awayExp;
       }
 
-      // Build projected table
+            // Build projected table (show BOTH raw + smoothed values used by the model)
       var projected = [];
       for (var t=0; t<rows.length; t++){
         var tidRow = getStandingsTeamId(rows[t]);
@@ -766,25 +766,48 @@ statusEl.textContent += " | HOME_ADV=" + HOME_ADV.toFixed(3);
 
         var base = seasonPPG[tidRow] || 0;
 
+        // Raw last-5
         var fobj2 = formMap[tidRow];
-        var l5ppg = (fobj2 && fobj2.games) ? fobj2.ppg : base;
+        var l5Raw = (fobj2 && fobj2.games) ? fobj2.ppg : base;
+        var l5Games = (fobj2 && fobj2.games) ? fobj2.games : 0;
+        var l5S = shrink(l5Raw, l5Games, base, K_FORM);
 
+        // Raw home/away ppg + games
         var hRaw = ppgFromAggId(homeAgg, tidRow);
         var aRaw = ppgFromAggId(awayAgg, tidRow);
+        var hGames = (homeAgg[tidRow] && homeAgg[tidRow].games) ? homeAgg[tidRow].games : 0;
+        var aGames = (awayAgg[tidRow] && awayAgg[tidRow].games) ? awayAgg[tidRow].games : 0;
+
+        var hS = shrink((hRaw === null ? base : hRaw), hGames, base, K_VENUE);
+        var aS = shrink((aRaw === null ? base : aRaw), aGames, base, K_VENUE);
+
+        // Raw H2H + count (if none, fall back to base)
         var h2hRaw2 = (typeof h2hMap[tidRow] === "number") ? h2hMap[tidRow] : base;
+        var h2hGames = (typeof h2hCnt !== "undefined" && h2hCnt[tidRow]) ? h2hCnt[tidRow] : 0;
+        var h2hS = shrink(h2hRaw2, h2hGames, base, K_H2H);
 
         projected.push({
           teamId: tidRow,
           team: teamIdToName[tidRow] || tidRow,
           projPts: projPtsMap[tidRow],
+
           RH: remainHome[tidRow] || 0,
           RA: remainAway[tidRow] || 0,
+
+          // Raw
           HPPG: (hRaw === null ? base : hRaw),
           APPG: (aRaw === null ? base : aRaw),
-          L5PPG: l5ppg,
-          H2HPPG: h2hRaw2
+          L5PPG: l5Raw,
+          H2HPPG: h2hRaw2,
+
+          // Smoothed (these are what the model effectively uses)
+          HPPG_S: hS,
+          APPG_S: aS,
+          L5PPG_S: l5S,
+          H2HPPG_S: h2hS
         });
       }
+
 
       projected.sort(function(a,b){ return b.projPts - a.projPts; });
 
@@ -798,23 +821,32 @@ statusEl.textContent += " | HOME_ADV=" + HOME_ADV.toFixed(3);
         " | HOME_ADV=" + Number(HOME_ADV).toFixed(3) +
         " | SCALE=" + Number(SIGMOID_SCALE).toFixed(2);
 
-      var lines = [];
-
-      lines.push("#  Team                         ProjPts  RH RA  HPPG APPG  L5PPG H2HPPG");
-      lines.push("-------------------------------------------------------------------------");
+            var lines = [];
+      lines.push("#  Team                         ProjPts RH RA  H   A   L5  H2H   Hs  As  L5s H2Hs");
+      lines.push("----------------------------------------------------------------------------------");
       for (var k=0; k<projected.length; k++){
         var p = projected[k];
         var line = padLeft(k+1, 2) + "  " + padRight(p.team, 28) +
           "  " + padLeft(p.projPts.toFixed(1), 7) +
-          "  " + padLeft(p.RH, 2) +
+          " "  + padLeft(p.RH, 2) +
           " "  + padLeft(p.RA, 2) +
+
+          // Raw
           "  " + padLeft(p.HPPG.toFixed(2), 4) +
           " "  + padLeft(p.APPG.toFixed(2), 4) +
-          "  " + padLeft(p.L5PPG.toFixed(2), 5) +
-          "  " + padLeft(p.H2HPPG.toFixed(2), 5);
+          " "  + padLeft(p.L5PPG.toFixed(2), 4) +
+          " "  + padLeft(p.H2HPPG.toFixed(2), 4) +
+
+          // Smoothed
+          "   " + padLeft(p.HPPG_S.toFixed(2), 4) +
+          " "   + padLeft(p.APPG_S.toFixed(2), 4) +
+          " "   + padLeft(p.L5PPG_S.toFixed(2), 4) +
+          " "   + padLeft(p.H2HPPG_S.toFixed(2), 4);
+
         lines.push(line);
       }
       outEl.textContent = lines.join("\n");
+
     })
     .catch(function(e){
       statusEl.textContent = "Predictor failed: " + e.message;
