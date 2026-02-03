@@ -999,8 +999,9 @@ statusEl.textContent += " | HOME_ADV=" + HOME_ADV.toFixed(3);
       var pRel = relCount / SIMS;
 
       // --- Update summary panel ---
-      curEl.textContent  = (currentPos ? (currentPos + "th","st","nd","rd") : "?") + " • " + (currentPoints !== null ? currentPoints : "?") + " pts";
-      predEl.textContent = (predPos ? (predPos + "th","st","nd","rd") : "?") + " • " + (predPts !== null ? predPts.toFixed(1) : "?") + " pts";
+      curEl.textContent  = (currentPos ? ordinal(currentPos) : "?") + " • " + currentPoints + " pts";
+predEl.textContent = (predPos ? ordinal(predPos) : "?") + " • " + predPts.toFixed(1) + " pts";
+
 
       pTop4El.textContent = pct(pTop4);
       p56El.textContent   = pct(p56);
