@@ -157,7 +157,7 @@ select, button{
 <div id="summary" style="display:none; margin:16px 0;">
   <div style="display:grid; gap:10px;">
     <div><b>Current position & points:</b> <span id="cur"></span></div>
-    <div><b>Predicted position & points:</b> <span id="pred"></span></div>
+    <div><b>Predicted position & points (sim mean):</b> <span id="pred"></span></div>
     <div><b>Probability of top 4 finish:</b> <span id="pTop4"></span></div>
     <div><b>Probability of 5th–6th:</b> <span id="p56"></span></div>
     <div><b>Probability of 7th:</b> <span id="p7"></span></div>
@@ -178,7 +178,8 @@ select, button{
   Hs = expected home points per game (based on actual home form)<br>
   As = expected away points per game (based on actual away form)<br>
   L5s = expected future form based on last 5 league matches<br>
-  H2Hs = adjustment based on previous result vs remaining opponents
+  H2Hs = adjustment based on previous result vs remaining opponents<br>
+  SoS = average remaining opponent base PPG (lower = easier run-in)
 </div>
 
 
@@ -223,7 +224,8 @@ var lastMathText  = "";
     var teamIdToName = {};
 var teamIdToShort = {};
 var SIGMOID_SCALE = 1.25;
-    var HOME_ADV = 0.14; // default; will be recalculated each run
+var HOME_ADV = 0.14; // default; will be recalculated each run
+var DRAW_RATE = 0.26; // default; recalculated each run
 
 
     statusEl.textContent = "JS loaded. Click “Get live standings”.";
@@ -585,11 +587,10 @@ var absDiff = Math.abs(mismatch);
 
 
   // Dynamic draw probability:
-  // around 0.30 for close teams, trending down to ~0.15 for big mismatches
-  // (numbers are tunable, but these are reasonable starting values)
-  var drawP = 0.30 - 0.12 * sigmoid((absDiff - 0.35) * 6);
+  // anchored to league draw rate, with more draws for close teams
+  var drawP = DRAW_RATE + 0.10 * (0.5 - sigmoid((absDiff - 0.35) * 6));
   if (drawP < 0.12) drawP = 0.12;
-  if (drawP > 0.32) drawP = 0.32;
+  if (drawP > 0.34) drawP = 0.34;
 
   // Win probability (home win given non-draw)
   var winP = sigmoid(diff * SIGMOID_SCALE);
@@ -663,6 +664,7 @@ function formatSimpleProjected(projected){
       var homePtsSum = 0;
       var awayPtsSum = 0;
       var nFin = 0;
+      var drawFin = 0;
 
       for (var iHA=0; iHA<finishedOnly.length; iHA++){
         var mHA = finishedOnly[iHA];
@@ -674,7 +676,7 @@ function formatSimpleProjected(projected){
         var hpts = 0, apts = 0;
         if (hs > as) { hpts = 3; apts = 0; }
         else if (hs < as) { hpts = 0; apts = 3; }
-        else { hpts = 1; apts = 1; }
+        else { hpts = 1; apts = 1; drawFin += 1; }
 
         homePtsSum += hpts;
         awayPtsSum += apts;
@@ -692,9 +694,12 @@ function formatSimpleProjected(projected){
         // Clamp: keep sane
         if (HOME_ADV < 0.05) HOME_ADV = 0.05;
         if (HOME_ADV > 0.25) HOME_ADV = 0.25;
+
+        DRAW_RATE = drawFin / nFin;
+        if (DRAW_RATE < 0.18) DRAW_RATE = 0.18;
+        if (DRAW_RATE > 0.32) DRAW_RATE = 0.32;
       }
-// DEBUG (temporary)
-statusEl.textContent += " | HOME_ADV=" + HOME_ADV.toFixed(3);
+
       // Standings rows
       var total = findTotal(latestStandingsPayload);
       var rows = (total && total.table) ? total.table : [];
@@ -741,13 +746,14 @@ statusEl.textContent += " | HOME_ADV=" + HOME_ADV.toFixed(3);
       // If league is very spread out, scale down.
       // Clamp to keep sane.
       if (stdev > 0.0001){
-        SIGMOID_SCALE = 1.25 / stdev;
+        SIGMOID_SCALE = 1.05 / stdev;
       } else {
-        SIGMOID_SCALE = 1.25;
+        SIGMOID_SCALE = 1.05;
       }
-      if (SIGMOID_SCALE < 0.8) SIGMOID_SCALE = 0.8;
-      if (SIGMOID_SCALE > 3.0) SIGMOID_SCALE = 3.0;
+      if (SIGMOID_SCALE < 0.7) SIGMOID_SCALE = 0.7;
+      if (SIGMOID_SCALE > 2.6) SIGMOID_SCALE = 2.6;
 
+      var leagueMeanPPG = mean;
 
       // --- FORM MAP (last 5) using IDs ---
       // Build: teamId -> [{t, pts}]
@@ -920,9 +926,11 @@ statusEl.textContent += " | HOME_ADV=" + HOME_ADV.toFixed(3);
       }
 
       // Weights + shrinkage (you already set these)
+      var K_BASE = 6;
       var FORM_W = 0.28;
       var VENUE_W = 0.25;
       var H2H_W  = 0.05;
+      var SOS_W  = 0.22;
 
       var K_VENUE = 8;
       var K_FORM  = 4;
@@ -934,8 +942,51 @@ statusEl.textContent += " | HOME_ADV=" + HOME_ADV.toFixed(3);
         return ((ppgObserved * obsGames) + (priorPPG * k)) / (obsGames + k);
       }
 
-      function effHome(tid){
+      function basePPG(tid){
         var base = seasonPPG[tid] || 0;
+        var gp = played[tid] || 0;
+        return shrink(base, gp, leagueMeanPPG, K_BASE);
+      }
+
+      // Strength of schedule: average remaining opponent base PPG
+      var sosSum = {};
+      var sosCnt = {};
+      function addSoS(tid, oppBase){
+        if (!sosSum[tid]) sosSum[tid] = 0;
+        if (!sosCnt[tid]) sosCnt[tid] = 0;
+        sosSum[tid] += oppBase;
+        sosCnt[tid] += 1;
+      }
+
+      for (var rs=0; rs<remainingOnly.length; rs++){
+        var rmS = remainingOnly[rs];
+        var hS = getMatchTeamId(rmS.homeTeam);
+        var aS = getMatchTeamId(rmS.awayTeam);
+        if (!hS || !aS) continue;
+
+        var baseH = basePPG(hS);
+        var baseA = basePPG(aS);
+        addSoS(hS, baseA);
+        addSoS(aS, baseH);
+      }
+
+      var sosMap = {};
+      for (var tidSoS in seasonPPG){
+        if (sosCnt[tidSoS]){
+          sosMap[tidSoS] = sosSum[tidSoS] / sosCnt[tidSoS];
+        } else {
+          sosMap[tidSoS] = leagueMeanPPG;
+        }
+      }
+
+      function scheduleAdj(tid){
+        var sos = sosMap[tid];
+        if (typeof sos !== "number") return 0;
+        return (leagueMeanPPG - sos) * SOS_W;
+      }
+
+      function effHome(tid){
+        var base = basePPG(tid);
 
         var fobj = formMap[tid];
         var l5 = (fobj && fobj.games) ? fobj.ppg : base;
@@ -951,11 +1002,13 @@ statusEl.textContent += " | HOME_ADV=" + HOME_ADV.toFixed(3);
         var h2h = shrink(h2hRaw, 6, base, K_H2H);
         var h2hAdj = (h2h - base) * H2H_W;
 
-        return base + formAdj + venueAdj + h2hAdj;
+        var sosAdj = scheduleAdj(tid);
+
+        return base + formAdj + venueAdj + h2hAdj + sosAdj;
       }
 
       function effAway(tid){
-        var base = seasonPPG[tid] || 0;
+        var base = basePPG(tid);
 
         var fobj = formMap[tid];
         var l5 = (fobj && fobj.games) ? fobj.ppg : base;
@@ -971,7 +1024,9 @@ statusEl.textContent += " | HOME_ADV=" + HOME_ADV.toFixed(3);
         var h2h = shrink(h2hRaw, 6, base, K_H2H);
         var h2hAdj = (h2h - base) * H2H_W;
 
-        return base + formAdj + venueAdj + h2hAdj;
+        var sosAdj = scheduleAdj(tid);
+
+        return base + formAdj + venueAdj + h2hAdj + sosAdj;
       }
 
       // Fixture-by-fixture expected points (IDs)
@@ -1001,7 +1056,7 @@ statusEl.textContent += " | HOME_ADV=" + HOME_ADV.toFixed(3);
         var tidRow = getStandingsTeamId(rows[t]);
         if (!tidRow) continue;
 
-        var base = seasonPPG[tidRow] || 0;
+        var base = basePPG(tidRow);
 
         // Raw last-5
         var fobj2 = formMap[tidRow];
@@ -1041,7 +1096,8 @@ statusEl.textContent += " | HOME_ADV=" + HOME_ADV.toFixed(3);
           HPPG_S: hS,
           APPG_S: aS,
           L5PPG_S: l5S,
-          H2HPPG_S: h2hS
+          H2HPPG_S: h2hS,
+          SoS: sosMap[tidRow]
         });
       }
 
@@ -1055,17 +1111,6 @@ statusEl.textContent += " | HOME_ADV=" + HOME_ADV.toFixed(3);
         if (tidR === selectedId){
           currentPos = rows[rr].position || (rr+1);
           currentPoints = rows[rr].points || 0;
-          break;
-        }
-      }
-
-      // --- Predicted position & points (deterministic expected points) ---
-      var predPos = null;
-      var predPts = null;
-      for (var j=0; j<projected.length; j++){
-        if (projected[j].teamId === selectedId){
-          predPos = j+1;
-          predPts = projected[j].projPts;
           break;
         }
       }
@@ -1089,6 +1134,77 @@ statusEl.textContent += " | HOME_ADV=" + HOME_ADV.toFixed(3);
       var p56Count = 0;
       var p7Count = 0;
       var relCount = 0;
+      var selPosList = [];
+      var selPtsList = [];
+
+      // Build team volatility from season match points
+      var teamPts = {};
+      function addTeamPts(tid, pts){
+        if (!teamPts[tid]) teamPts[tid] = [];
+        teamPts[tid].push(pts);
+      }
+      for (var tv=0; tv<finishedOnly.length; tv++){
+        var mv = finishedOnly[tv];
+        var htv = getMatchTeamId(mv.homeTeam);
+        var atv = getMatchTeamId(mv.awayTeam);
+        if (!htv || !atv) continue;
+
+        var hvs = (mv.score && mv.score.fullTime) ? mv.score.fullTime.home : null;
+        var avs = (mv.score && mv.score.fullTime) ? mv.score.fullTime.away : null;
+        if (typeof hvs !== "number" || typeof avs !== "number") continue;
+
+        var hpts = 0, apts = 0;
+        if (hvs > avs) { hpts = 3; apts = 0; }
+        else if (hvs < avs) { hpts = 0; apts = 3; }
+        else { hpts = 1; apts = 1; }
+
+        addTeamPts(htv, hpts);
+        addTeamPts(atv, apts);
+      }
+
+      var teamStd = {};
+      var leagueStd = 0;
+      var leagueStdCount = 0;
+      function calcStd(list){
+        var sum = 0;
+        for (var i=0; i<list.length; i++) sum += list[i];
+        var meanV = list.length ? (sum / list.length) : 0;
+        var v = 0;
+        for (var j=0; j<list.length; j++){
+          var d = list[j] - meanV;
+          v += d * d;
+        }
+        return list.length ? Math.sqrt(v / list.length) : 0;
+      }
+
+      for (var tidStd in teamPts){
+        var std = calcStd(teamPts[tidStd]);
+        teamStd[tidStd] = std;
+        leagueStd += std;
+        leagueStdCount += 1;
+      }
+      leagueStd = leagueStdCount ? (leagueStd / leagueStdCount) : 0.9;
+
+      function normal(){
+        var u = 0, v = 0;
+        while (u === 0) u = Math.random();
+        while (v === 0) v = Math.random();
+        return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+      }
+
+      function noiseScale(tid){
+        var st = (typeof teamStd[tid] === "number") ? teamStd[tid] : leagueStd;
+        var gp = teamPts[tid] ? teamPts[tid].length : 0;
+        var base = 0.08 + (0.10 * st);
+        var sampleAdj = Math.sqrt(12 / Math.max(12, gp));
+        return base * sampleAdj;
+      }
+
+      function clampStrength(x){
+        if (x < 0.2) return 0.2;
+        if (x > 3.0) return 3.0;
+        return x;
+      }
 
       function rankTeams(pointsMap){
         var arr = [];
@@ -1104,6 +1220,11 @@ statusEl.textContent += " | HOME_ADV=" + HOME_ADV.toFixed(3);
       }
 
       for (var s=0; s<SIMS; s++){
+        var teamNoise = {};
+        for (var tidN in startPts){
+          teamNoise[tidN] = normal() * noiseScale(tidN);
+        }
+
         // copy starting points
         var simPts = {};
         for (var tidS in startPts) simPts[tidS] = startPts[tidS];
@@ -1114,8 +1235,8 @@ statusEl.textContent += " | HOME_ADV=" + HOME_ADV.toFixed(3);
           var aidF = getMatchTeamId(fx.awayTeam);
           if (!hidF || !aidF) continue;
 
-          var homeEff = effHome(hidF);
-          var awayEff = effAway(aidF);
+          var homeEff = clampStrength(effHome(hidF) + (teamNoise[hidF] || 0));
+          var awayEff = clampStrength(effAway(aidF) + (teamNoise[aidF] || 0));
 
           var exp = expectedPoints(hidF, aidF, homeEff, awayEff);
 
@@ -1145,6 +1266,8 @@ statusEl.textContent += " | HOME_ADV=" + HOME_ADV.toFixed(3);
           if (posSel === 5 || posSel === 6) p56Count++;
           if (posSel === 7) p7Count++;
           if (posSel >= 18) relCount++;
+          selPosList.push(posSel);
+          selPtsList.push(simPts[selectedId]);
         }
       }
 
@@ -1152,10 +1275,21 @@ statusEl.textContent += " | HOME_ADV=" + HOME_ADV.toFixed(3);
       var p56 = p56Count / SIMS;
       var p7 = p7Count / SIMS;
       var pRel = relCount / SIMS;
+      selPosList.sort(function(a,b){ return a - b; });
+      selPtsList.sort(function(a,b){ return a - b; });
+
+      var predPos = selPosList.length ? selPosList[Math.floor(selPosList.length / 2)] : null;
+      var predPts = null;
+      if (selPtsList.length){
+        var sumPts = 0;
+        for (var sp=0; sp<selPtsList.length; sp++) sumPts += selPtsList[sp];
+        predPts = sumPts / selPtsList.length;
+      }
 
       // --- Update summary panel ---
       curEl.textContent  = (currentPos ? ordinal(currentPos) : "?") + " • " + currentPoints + " pts";
-predEl.textContent = (predPos ? ordinal(predPos) : "?") + " • " + Math.round(predPts) + " pts";
+      var predPtsText = (predPts !== null && isFinite(predPts)) ? Math.round(predPts) : "?";
+      predEl.textContent = (predPos ? ordinal(predPos) : "?") + " • " + predPtsText + " pts";
 
 
 
@@ -1171,16 +1305,6 @@ predEl.textContent = (predPos ? ordinal(predPos) : "?") + " • " + Math.round(p
       // IMPORTANT: we show it only when the user clicks the button.
       // You already generate `lines.join("\n")` later — we’ll reuse that.
 
-            var pos = null;
-      for (var j = 0; j < projected.length; j++){
-        if (projected[j].teamId === selectedId){ pos = j+1; break; }
-      }
-
-      statusEl.textContent =
-        "[DBG] Predicted finish for " + selectedName + ": " + (pos || "?") + "th" +
-        " | HOME_ADV=" + Number(HOME_ADV).toFixed(3) +
-        " | SCALE=" + Number(SIGMOID_SCALE).toFixed(2);
-
             var lines = [];
 lines.push(
   padRight("#", 3) +
@@ -1188,13 +1312,14 @@ lines.push(
   padLeft("ProjPts", 8) + " " +
   padLeft("RH", 2) + " " +
   padLeft("RA", 2) + " " +
+  padLeft("SoS", 5) + " " +
   padLeft("Hs", 5) + " " +
   padLeft("As", 5) + " " +
   padLeft("L5s", 5) + " " +
   padLeft("H2Hs", 5)
 );
 
-lines.push("--------------------------------------------------------------------------");
+lines.push("-------------------------------------------------------------------------------");
 
 for (var k=0; k<projected.length; k++){
   var p = projected[k];
@@ -1206,6 +1331,7 @@ for (var k=0; k<projected.length; k++){
 
     padLeft(p.RH, 2) + " " +
     padLeft(p.RA, 2) + " " +
+    padLeft((typeof p.SoS === "number" ? p.SoS.toFixed(2) : "0.00"), 5) + " " +
     padLeft(p.HPPG_S.toFixed(2), 5) + " " +
     padLeft(p.APPG_S.toFixed(2), 5) + " " +
     padLeft(p.L5PPG_S.toFixed(2), 5) + " " +
