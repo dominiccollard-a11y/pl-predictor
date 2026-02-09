@@ -666,6 +666,7 @@ function formatSimpleProjected(projected){
       var nFin = 0;
       var drawFin = 0;
 
+      var goalSum = 0;
       for (var iHA=0; iHA<finishedOnly.length; iHA++){
         var mHA = finishedOnly[iHA];
 
@@ -680,6 +681,7 @@ function formatSimpleProjected(projected){
 
         homePtsSum += hpts;
         awayPtsSum += apts;
+        goalSum += (hs + as);
         nFin += 1;
       }
 
@@ -754,13 +756,14 @@ function formatSimpleProjected(projected){
       if (SIGMOID_SCALE > 2.6) SIGMOID_SCALE = 2.6;
 
       var leagueMeanPPG = mean;
+      var leagueGfPg = nFin ? (goalSum / (nFin * 2)) : 0;
 
-      // --- FORM MAP (last 5) using IDs ---
-      // Build: teamId -> [{t, pts}]
+      // --- FORM + RECENT STATS using IDs ---
+      // Build: teamId -> [{t, pts, gf, ga}]
       var formRaw = {};
-      function addForm(tid, t, pts){
+      function addForm(tid, t, pts, gf, ga){
         if (!formRaw[tid]) formRaw[tid] = [];
-        formRaw[tid].push({ t: t, pts: pts });
+        formRaw[tid].push({ t: t, pts: pts, gf: gf, ga: ga });
       }
       function ts(utc){
         var d = utc ? Date.parse(utc) : 0;
@@ -783,11 +786,12 @@ function formatSimpleProjected(projected){
         else { homePts = 1; awayPts = 1; }
 
         var tstamp = ts(fm.utcDate);
-        addForm(hid, tstamp, homePts);
-        addForm(aid, tstamp, awayPts);
+        addForm(hid, tstamp, homePts, hs, as);
+        addForm(aid, tstamp, awayPts, as, hs);
       }
 
       var formMap = {}; // tid -> {games, ppg}
+      var recentMap = {}; // tid -> {g3,ppg3,gf3,ga3,g7,ppg7,gf7,ga7}
       for (var tidForm in formRaw){
         var list = formRaw[tidForm];
         list.sort(function(a,b){ return a.t - b.t; });
@@ -799,6 +803,34 @@ function formatSimpleProjected(projected){
           games += 1;
         }
         formMap[tidForm] = { games: games, ppg: games ? (sum / games) : 0 };
+
+        var start3 = Math.max(0, list.length - 3);
+        var start7 = Math.max(0, list.length - 7);
+        var sum3 = 0, gf3 = 0, ga3 = 0, g3 = 0;
+        for (var j3=start3; j3<list.length; j3++){
+          sum3 += list[j3].pts;
+          gf3 += list[j3].gf;
+          ga3 += list[j3].ga;
+          g3 += 1;
+        }
+        var sum7 = 0, gf7 = 0, ga7 = 0, g7 = 0;
+        for (var j7=start7; j7<list.length; j7++){
+          sum7 += list[j7].pts;
+          gf7 += list[j7].gf;
+          ga7 += list[j7].ga;
+          g7 += 1;
+        }
+
+        recentMap[tidForm] = {
+          g3: g3,
+          ppg3: g3 ? (sum3 / g3) : 0,
+          gf3: gf3,
+          ga3: ga3,
+          g7: g7,
+          ppg7: g7 ? (sum7 / g7) : 0,
+          gf7: gf7,
+          ga7: ga7
+        };
       }
 
       // --- HOME/AWAY AGGS using IDs ---
@@ -927,19 +959,35 @@ function formatSimpleProjected(projected){
 
       // Weights + shrinkage (you already set these)
       var K_BASE = 6;
-      var FORM_W = 0.28;
-      var VENUE_W = 0.25;
-      var H2H_W  = 0.05;
-      var SOS_W  = 0.22;
+      var FORM_W = 0.08;
+      var RECENT3_W = 0.28;
+      var RECENT7_W = 0.18;
+      var GF3_W = 0.16;
+      var GA3_W = 0.16;
+      var GF7_W = 0.10;
+      var GA7_W = 0.10;
+      var VENUE_W = 0.18;
+      var H2H_W  = 0.04;
+      var SOS_W  = 0.12;
 
       var K_VENUE = 8;
       var K_FORM  = 4;
       var K_H2H   = 6;
+      var K_RECENT3 = 2;
+      var K_RECENT7 = 4;
+      var K_G3 = 2;
+      var K_G7 = 4;
 
       function shrink(ppgObserved, gamesObserved, priorPPG, k){
         if (ppgObserved === null || typeof ppgObserved !== "number") return priorPPG;
         var obsGames = gamesObserved || 0;
         return ((ppgObserved * obsGames) + (priorPPG * k)) / (obsGames + k);
+      }
+
+      function shrinkRate(rateObserved, gamesObserved, priorRate, k){
+        if (rateObserved === null || typeof rateObserved !== "number") return priorRate;
+        var obsGames = gamesObserved || 0;
+        return ((rateObserved * obsGames) + (priorRate * k)) / (obsGames + k);
       }
 
       function basePPG(tid){
@@ -993,6 +1041,31 @@ function formatSimpleProjected(projected){
         var l5s = shrink(l5, (fobj && fobj.games) ? fobj.games : 0, base, K_FORM);
         var formAdj = (l5s - base) * FORM_W;
 
+        var recent = recentMap[tid];
+        var g3 = (recent && recent.g3) ? recent.g3 : 0;
+        var g7 = (recent && recent.g7) ? recent.g7 : 0;
+        var l3 = (recent && recent.g3) ? recent.ppg3 : base;
+        var l7 = (recent && recent.g7) ? recent.ppg7 : base;
+        var l3s = shrink(l3, g3, base, K_RECENT3);
+        var l7s = shrink(l7, g7, base, K_RECENT7);
+        var recentAdj = ((l3s - base) * RECENT3_W) + ((l7s - base) * RECENT7_W);
+
+        var gf3 = (recent && recent.g3) ? (recent.gf3 / g3) : leagueGfPg;
+        var ga3 = (recent && recent.g3) ? (recent.ga3 / g3) : leagueGfPg;
+        var gf7 = (recent && recent.g7) ? (recent.gf7 / g7) : leagueGfPg;
+        var ga7 = (recent && recent.g7) ? (recent.ga7 / g7) : leagueGfPg;
+
+        var gf3s = shrinkRate(gf3, g3, leagueGfPg, K_G3);
+        var ga3s = shrinkRate(ga3, g3, leagueGfPg, K_G3);
+        var gf7s = shrinkRate(gf7, g7, leagueGfPg, K_G7);
+        var ga7s = shrinkRate(ga7, g7, leagueGfPg, K_G7);
+
+        var goalsAdj =
+          ((gf3s - leagueGfPg) * GF3_W) +
+          ((leagueGfPg - ga3s) * GA3_W) +
+          ((gf7s - leagueGfPg) * GF7_W) +
+          ((leagueGfPg - ga7s) * GA7_W);
+
         var hObs = ppgFromAggId(homeAgg, tid);
         var hGames = (homeAgg[tid] && homeAgg[tid].games) ? homeAgg[tid].games : 0;
         var h = shrink(hObs, hGames, base, K_VENUE);
@@ -1004,7 +1077,7 @@ function formatSimpleProjected(projected){
 
         var sosAdj = scheduleAdj(tid);
 
-        return base + formAdj + venueAdj + h2hAdj + sosAdj;
+        return base + formAdj + recentAdj + goalsAdj + venueAdj + h2hAdj + sosAdj;
       }
 
       function effAway(tid){
@@ -1014,6 +1087,31 @@ function formatSimpleProjected(projected){
         var l5 = (fobj && fobj.games) ? fobj.ppg : base;
         var l5s = shrink(l5, (fobj && fobj.games) ? fobj.games : 0, base, K_FORM);
         var formAdj = (l5s - base) * FORM_W;
+
+        var recent = recentMap[tid];
+        var g3 = (recent && recent.g3) ? recent.g3 : 0;
+        var g7 = (recent && recent.g7) ? recent.g7 : 0;
+        var l3 = (recent && recent.g3) ? recent.ppg3 : base;
+        var l7 = (recent && recent.g7) ? recent.ppg7 : base;
+        var l3s = shrink(l3, g3, base, K_RECENT3);
+        var l7s = shrink(l7, g7, base, K_RECENT7);
+        var recentAdj = ((l3s - base) * RECENT3_W) + ((l7s - base) * RECENT7_W);
+
+        var gf3 = (recent && recent.g3) ? (recent.gf3 / g3) : leagueGfPg;
+        var ga3 = (recent && recent.g3) ? (recent.ga3 / g3) : leagueGfPg;
+        var gf7 = (recent && recent.g7) ? (recent.gf7 / g7) : leagueGfPg;
+        var ga7 = (recent && recent.g7) ? (recent.ga7 / g7) : leagueGfPg;
+
+        var gf3s = shrinkRate(gf3, g3, leagueGfPg, K_G3);
+        var ga3s = shrinkRate(ga3, g3, leagueGfPg, K_G3);
+        var gf7s = shrinkRate(gf7, g7, leagueGfPg, K_G7);
+        var ga7s = shrinkRate(ga7, g7, leagueGfPg, K_G7);
+
+        var goalsAdj =
+          ((gf3s - leagueGfPg) * GF3_W) +
+          ((leagueGfPg - ga3s) * GA3_W) +
+          ((gf7s - leagueGfPg) * GF7_W) +
+          ((leagueGfPg - ga7s) * GA7_W);
 
         var aObs = ppgFromAggId(awayAgg, tid);
         var aGames = (awayAgg[tid] && awayAgg[tid].games) ? awayAgg[tid].games : 0;
@@ -1026,7 +1124,7 @@ function formatSimpleProjected(projected){
 
         var sosAdj = scheduleAdj(tid);
 
-        return base + formAdj + venueAdj + h2hAdj + sosAdj;
+        return base + formAdj + recentAdj + goalsAdj + venueAdj + h2hAdj + sosAdj;
       }
 
       // Fixture-by-fixture expected points (IDs)
