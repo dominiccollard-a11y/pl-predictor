@@ -105,7 +105,7 @@
 
   #tableFooter{
     margin-top:12px;
-    color:var(--text);
+    color:#ffffff;
     font-style: italic;
     font-size: 12px;
     opacity: 0.95;
@@ -171,7 +171,7 @@ select, button{
 </div>
 
 <pre id="out">No data yet.</pre>
-<div id="tableFooter" style="display:none; margin-top:12px; font-size:14px; line-height:1.4; color:#333;">
+<div id="tableFooter" style="display:none; margin-top:12px; font-size:14px; line-height:1.4;">
   <b>Key:</b><br>
   ProjPts = projected end-of-season points<br>
   RH / RA = remaining home / away games<br>
@@ -179,7 +179,7 @@ select, button{
   As = expected away points per game (based on actual away form)<br>
   L5s = expected future form based on last 5 league matches<br>
   H2Hs = adjustment based on previous result vs remaining opponents<br>
-  SoS = average remaining opponent base PPG (lower = easier run-in)
+  RI = Run-in - average strength of all remaining opponents (lower = easier run-in)
 </div>
 
 
@@ -1195,7 +1195,7 @@ function formatSimpleProjected(projected){
           APPG_S: aS,
           L5PPG_S: l5S,
           H2HPPG_S: h2hS,
-          SoS: sosMap[tidRow]
+          RI: sosMap[tidRow]
         });
       }
 
@@ -1232,8 +1232,10 @@ function formatSimpleProjected(projected){
       var p56Count = 0;
       var p7Count = 0;
       var relCount = 0;
-      var selPosList = [];
-      var selPtsList = [];
+      var sumPtsMap = {};
+      for (var tidInit2 in startPts){
+        sumPtsMap[tidInit2] = 0;
+      }
 
       // Build team volatility from season match points
       var teamPts = {};
@@ -1353,6 +1355,10 @@ function formatSimpleProjected(projected){
           }
         }
 
+        for (var tidAdd in simPts){
+          sumPtsMap[tidAdd] += simPts[tidAdd];
+        }
+
         var ranked = rankTeams(simPts);
         var posSel = null;
         for (var k=0; k<ranked.length; k++){
@@ -1364,8 +1370,6 @@ function formatSimpleProjected(projected){
           if (posSel === 5 || posSel === 6) p56Count++;
           if (posSel === 7) p7Count++;
           if (posSel >= 18) relCount++;
-          selPosList.push(posSel);
-          selPtsList.push(simPts[selectedId]);
         }
       }
 
@@ -1373,16 +1377,36 @@ function formatSimpleProjected(projected){
       var p56 = p56Count / SIMS;
       var p7 = p7Count / SIMS;
       var pRel = relCount / SIMS;
-      selPosList.sort(function(a,b){ return a - b; });
-      selPtsList.sort(function(a,b){ return a - b; });
-
-      var predPos = selPosList.length ? selPosList[Math.floor(selPosList.length / 2)] : null;
-      var predPts = null;
-      if (selPtsList.length){
-        var sumPts = 0;
-        for (var sp=0; sp<selPtsList.length; sp++) sumPts += selPtsList[sp];
-        predPts = sumPts / selPtsList.length;
+      var meanPtsMap = {};
+      for (var tidMean in sumPtsMap){
+        meanPtsMap[tidMean] = sumPtsMap[tidMean] / SIMS;
       }
+
+      var simProjected = [];
+      for (var rSim=0; rSim<rows.length; rSim++){
+        var rowSim = rows[rSim];
+        var tidSim = getStandingsTeamId(rowSim);
+        if (!tidSim) continue;
+        simProjected.push({
+          teamId: tidSim,
+          team: teamIdToName[tidSim] || tidSim,
+          projPts: meanPtsMap[tidSim] || 0
+        });
+      }
+
+      simProjected.sort(function(a,b){
+        if (b.projPts !== a.projPts) return b.projPts - a.projPts;
+        return (gdMap[b.teamId] || 0) - (gdMap[a.teamId] || 0);
+      });
+
+      var predPos = null;
+      for (var pIdx=0; pIdx<simProjected.length; pIdx++){
+        if (simProjected[pIdx].teamId === selectedId){
+          predPos = pIdx + 1;
+          break;
+        }
+      }
+      var predPts = (typeof meanPtsMap[selectedId] === "number") ? meanPtsMap[selectedId] : null;
 
       // --- Update summary panel ---
       curEl.textContent  = (currentPos ? ordinal(currentPos) : "?") + " • " + currentPoints + " pts";
@@ -1397,7 +1421,7 @@ function formatSimpleProjected(projected){
       pRelEl.textContent  = pct(pRel);
 
       // Store tables for the buttons
-      lastProjected = projected;
+      lastProjected = simProjected;
 
       // Build the aligned "maths" table text (your existing one) and store it
       // IMPORTANT: we show it only when the user clicks the button.
@@ -1410,11 +1434,11 @@ lines.push(
   padLeft("ProjPts", 8) + " " +
   padLeft("RH", 2) + " " +
   padLeft("RA", 2) + " " +
-  padLeft("SoS", 5) + " " +
   padLeft("Hs", 5) + " " +
   padLeft("As", 5) + " " +
   padLeft("L5s", 5) + " " +
-  padLeft("H2Hs", 5)
+  padLeft("H2Hs", 5) + " " +
+  padLeft("RI", 5)
 );
 
 lines.push("-------------------------------------------------------------------------------");
@@ -1429,11 +1453,11 @@ for (var k=0; k<projected.length; k++){
 
     padLeft(p.RH, 2) + " " +
     padLeft(p.RA, 2) + " " +
-    padLeft((typeof p.SoS === "number" ? p.SoS.toFixed(2) : "0.00"), 5) + " " +
     padLeft(p.HPPG_S.toFixed(2), 5) + " " +
     padLeft(p.APPG_S.toFixed(2), 5) + " " +
     padLeft(p.L5PPG_S.toFixed(2), 5) + " " +
-    padLeft(p.H2HPPG_S.toFixed(2), 5);
+    padLeft(p.H2HPPG_S.toFixed(2), 5) + " " +
+    padLeft((typeof p.RI === "number" ? p.RI.toFixed(2) : "0.00"), 5);
 
   lines.push(line);
 }
